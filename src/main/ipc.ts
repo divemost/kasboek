@@ -1,10 +1,12 @@
 import { randomUUID } from 'node:crypto'
+import { release } from 'node:os'
 import { app, BrowserWindow, dialog, ipcMain, shell, type WebFrameMain } from 'electron'
 import { AppError } from '@core/errors'
 import { coreOps, fxStatus, runOp, type OpContext, type OpTable } from '@core/ops'
 import { getSetting, getSettings, updateSettings } from '@core/settings'
 import { TRANSFER_EXTENSION } from '@core/transfer-format'
 import type { OpName } from '@shared/contract'
+import { buildDiagnostics } from './diagnostics'
 import { graphicsStatus, markPainted, startupLog } from './graphics'
 import { lazy } from './lazy'
 import { splashStep } from './splash'
@@ -214,6 +216,7 @@ const desktopOps: OpTable = {
   },
 
   'auth.status': { mutates: false, assistant: false, handler: () => session.status() },
+  'auth.retry': { mutates: false, assistant: false, handler: () => session.retryRead() },
   'auth.setup': {
     mutates: true,
     assistant: false,
@@ -260,6 +263,14 @@ const desktopOps: OpTable = {
       await session.erase()
       return session.status()
     }
+  },
+  'auth.showDataFolder': { mutates: false, assistant: false, handler: async () => ({ ok: (await shell.openPath(paths.dataDir)) === '' }) },
+  'auth.diagnostics': {
+    mutates: false,
+    assistant: false,
+    handler: () => ({
+      text: buildDiagnostics({ dataDir: paths.dataDir, appVersion: app.getVersion(), platform: process.platform, arch: process.arch, osRelease: release(), error: session.readFailure() })
+    })
   },
   'auth.restoreErased': {
     mutates: false,
@@ -332,8 +343,8 @@ const desktopOps: OpTable = {
     mutates: false,
     assistant: false,
     handler: async () => {
-      // On the lock screen nobody may replace the data: only at first setup, or once logged in.
-      if ((await session.status()).state === 'locked') throw new AppError('auth.locked', 'Unlock Kasboek first.')
+      // On the lock screen nobody may replace the data: only at first setup, once logged in, or when the account file can't be opened at all.
+      if ((await session.status()).state === 'locked' && !session.accountUnreadable()) throw new AppError('auth.locked', 'Unlock Kasboek first.')
       const file = await openDialog({ title: 'Import a Kasboek export', properties: ['openFile'], filters: kasboekFilter })
       return file ? describeTransfer(file) : null
     }
@@ -342,7 +353,7 @@ const desktopOps: OpTable = {
     mutates: true,
     assistant: false,
     handler: async (_c, input) => {
-      if ((await session.status()).state === 'locked') throw new AppError('auth.locked', 'Unlock Kasboek first.')
+      if ((await session.status()).state === 'locked' && !session.accountUnreadable()) throw new AppError('auth.locked', 'Unlock Kasboek first.')
       await ensureSyncScheduler()
       const sync = await syncService.get()
       const reset = await importTransfer(input, { joining: sync.isPendingJoin(input.token) })

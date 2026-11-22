@@ -6,14 +6,18 @@ import { call } from '../../lib/api'
 import { useAuth } from '../../lib/auth'
 import { formatDate } from '../../lib/format'
 import { usePrefsFmt } from '../../lib/settings'
+import { useToast } from '../../components/Toast'
 import { AuthCard, AuthLayout } from './AuthLayout'
+import { ImportFlow } from './ImportFlow'
+import { OpenFailureView } from './OpenFailure'
 import { CodeInput, DeviceIcon, errText, useDeviceName } from './parts'
 
-type View = 'unlock' | 'recovery' | 'erase'
+type View = 'unlock' | 'recovery' | 'erase' | 'import'
 
 export function Lock() {
   const fmt = usePrefsFmt()
   const { t } = useTranslation()
+  const toast = useToast()
   const { status, set } = useAuth()
   const deviceName = useDeviceName(status.device)
   const [view, setView] = useState<View>('unlock')
@@ -23,6 +27,7 @@ export function Lock() {
   const [recoveryKey, setRecoveryKey] = useState('')
   const [erase, setErase] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [more, setMore] = useState(false)
   const [busy, setBusy] = useState(false)
 
   const run = (p: Promise<Parameters<typeof set>[0]>): void => {
@@ -38,17 +43,34 @@ export function Lock() {
   }
 
   if (status.error) {
+    if (view === 'import') {
+      return (
+        <AuthLayout>
+          <AuthCard title={t('auth.open.importTitle')} body={t('auth.open.importBody')}>
+            <ImportFlow onCancel={() => setView('unlock')} onDone={set} />
+          </AuthCard>
+        </AuthLayout>
+      )
+    }
     return (
       <AuthLayout>
-        <AuthCard title={t('auth.cantOpen')} body={status.error.message}>
-          <Button className="mb-2 w-full" onClick={() => window.location.reload()}>
-            {t('auth.tryAgain')}
-          </Button>
-          <Button variant="danger" className="w-full" onClick={() => setView('erase')}>
-            {t('auth.eraseTitle')}
-          </Button>
-          {view === 'erase' && <EraseForm value={erase} onChange={setErase} onConfirm={() => run(call('auth.erase', { confirm: 'ERASE' }))} busy={busy} />}
-        </AuthCard>
+        <OpenFailureView
+          error={status.error}
+          more={more}
+          onToggleMore={() => setMore((m) => !m)}
+          onRetry={() => run(call('auth.retry'))}
+          onImport={() => setView('import')}
+          onShowFolder={() => void call('auth.showDataFolder').then((r) => r.ok || toast(t('auth.open.folderFailed'), 'error'), (e) => toast(errText(e), 'error'))}
+          onCopy={() =>
+            void call('auth.diagnostics')
+              .then(({ text }) => navigator.clipboard.writeText(text))
+              .then(
+                () => toast(t('auth.open.copied')),
+                () => toast(t('auth.copyFailed'), 'error')
+              )
+          }
+          erase={<EraseForm value={erase} onChange={setErase} onConfirm={() => run(call('auth.erase', { confirm: 'ERASE' }))} busy={busy} />}
+        />
       </AuthLayout>
     )
   }
@@ -60,6 +82,11 @@ export function Lock() {
     <AuthLayout>
       {view === 'unlock' && (
         <AuthCard title={t('auth.unlockTitle')} body={device ? t('auth.unlockDeviceBody', { name: deviceName }) : undefined}>
+          {status.restoredFrom && (
+            <p className="mb-4 text-[13px] text-warning" role="status">
+              {t('auth.restoredBackup', { date: formatDate(status.restoredFrom, fmt) })}
+            </p>
+          )}
           <form
             className="flex flex-col gap-4"
             onSubmit={(e) => {

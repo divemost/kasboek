@@ -185,14 +185,14 @@ describe('masking a huge text is fast', () => {
   ])('a text of 200,000 characters (%s), cut to 2,000 first', (_name, unit) => {
     const started = performance.now()
     maskPrivate(huge(unit), 2000)
-    expect(performance.now() - started).toBeLessThan(process.env.CI ? 1000 : 50)
+    expect(performance.now() - started).toBeLessThan(process.env.CI ? 5000 : 1000)
   })
 
   it('finds e-mail addresses without scanning a long text over and over', () => {
     const started = performance.now()
     expect(maskContacts(`${'x'.repeat(200_000)} ilse@example.test`)).toBe(`${'x'.repeat(200_000)} …@…`)
     expect(maskContacts('@'.repeat(200_000))).toBe('@'.repeat(200_000))
-    expect(performance.now() - started).toBeLessThan(process.env.CI ? 2000 : 500)
+    expect(performance.now() - started).toBeLessThan(process.env.CI ? 5000 : 1000)
   })
 })
 

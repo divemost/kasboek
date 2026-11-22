@@ -17,8 +17,12 @@ import { encodeTransfer, openTransfer, readTransferHeader, TRANSFER_EXTENSION } 
 import { planRetention, timeFromName, type Tier } from '@core/backup-tiers'
 import type { BackupEntryInfo, BackupStatus, ImportReset, PickedTransfer } from '@shared/types'
 import { paths } from '../paths'
+import { startupLog } from '../graphics'
+import { fsErrorText } from '../fs-error'
+import { restoreErased } from '../quarantine'
+import { removeAccountSideFiles } from '../security/account-store'
 import { canUseDeviceMode } from '../security/device-mode'
-import { adopt, closeForReplace, db, isUnlocked, secrets } from '../session'
+import { adopt, beginImport, beginReplace, closeForReplace, db, initSession, isUnlocked, secrets, setOldDataAside } from '../session'
 
 const AUTO_FILE = new RegExp(`^kasboek-backup-[0-9_-]+\\.${TRANSFER_EXTENSION}$`)
 
@@ -184,13 +188,39 @@ export async function describeTransfer(file: string): Promise<PickedTransfer> {
   }
 }
 
-export async function importTransfer(input: {
+/** The import failed after the old files were set aside: remove what the import wrote and bring the old files back. */
+async function putBack(name: string): Promise<void> {
+  try {
+    closeForReplace()
+    await rm(paths.accountFile, { force: true })
+    await rm(paths.dbFile, { force: true })
+    await removeAccountSideFiles(true)
+    await restoreErased(paths, name)
+  } catch (err) {
+    startupLog(`import failed and the old data could not be put back from erased/${name} (${fsErrorText(err)})`)
+  }
+  await initSession().catch(() => undefined)
+}
+
+type ImportInput = {
   token: string
   password?: string
   code?: string
   recoveryKey?: string
   newPassword?: string
-}, opts: { joining?: boolean } = {}): Promise<ImportReset[]> {
+}
+
+/** Only one import runs at a time, and while it runs the session does not read the account again (see beginImport). */
+export async function importTransfer(input: ImportInput, opts: { joining?: boolean } = {}): Promise<ImportReset[]> {
+  const end = beginImport()
+  try {
+    return await runImport(input, opts)
+  } finally {
+    end()
+  }
+}
+
+async function runImport(input: ImportInput, opts: { joining?: boolean }): Promise<ImportReset[]> {
   const file = picked.get(input.token)
   if (!file) throw new AppError('transfer.expired', 'Choose the file again.')
   const contents = await openTransfer(
@@ -243,13 +273,39 @@ export async function importTransfer(input: {
   }
 
   // Replacing data on this computer: keep a safety copy of what's here first.
+  let safetyCopy = false
   if (isUnlocked()) {
     mkdirSync(paths.safetyDir, { recursive: true })
     await writeTransfer(join(paths.safetyDir, `before-import-${stamp()}.${TRANSFER_EXTENSION}`), 'backup')
+    safetyCopy = true
   }
-  closeForReplace()
-  await rename(staged, paths.dbFile)
-  await adopt(next, master, vault, usedRecovery)
+  // Decided in one synchronous step: locked with an account that opens is refused, even when it could not be read a moment ago.
+  let wasUnlocked: boolean
+  try {
+    wasUnlocked = beginReplace().wasUnlocked
+  } catch (err) {
+    await rm(staged, { force: true })
+    throw err
+  }
+  // Not unlocked (or unlocked only since the safety copy was due): whatever is here (an account that can't be opened, a database without account, copies of the account) goes to
+  // erased/<time> first, as Erase does, so nothing is lost and nothing is overwritten. Only reached once the imported file has
+  // opened and its database checked out.
+  let aside: string | null = null
+  if (!wasUnlocked || !safetyCopy) {
+    try {
+      aside = await setOldDataAside()
+    } catch (err) {
+      await rm(staged, { force: true })
+      throw err
+    }
+  }
+  try {
+    await rename(staged, paths.dbFile)
+    await adopt(next, master, vault, usedRecovery)
+  } catch (err) {
+    if (aside) await putBack(aside)
+    throw err
+  }
   picked.delete(input.token)
   // The staged database has sync off; the place file (URL, user name) and outbox next to it are stale now.
   if (!opts.joining && reset.includes('sync')) (await import('../sync/service')).removeSyncLeftovers()

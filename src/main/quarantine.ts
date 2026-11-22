@@ -6,8 +6,9 @@
  */
 import { existsSync } from 'node:fs'
 import { mkdir, readdir, rename, rm, rmdir } from 'node:fs/promises'
-import { join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { AppError } from '@core/errors'
+import { fsErrorText } from './fs-error'
 
 export interface DataLayout {
   dataDir: string
@@ -30,6 +31,19 @@ const parts = (l: DataLayout): { name: string; live: string }[] => [
   { name: 'kasboek.db', live: l.dbFile },
   { name: 'keystore.json', live: l.legacyKeystoreFile }
 ]
+
+/**
+ * Files that sit next to account.json and hold the same sealed secrets: the safety copy (.bak), a damaged one kept
+ * after a recovery (.damaged-<time>) and leftovers of a write (.tmp). They are set aside and brought back with it.
+ */
+async function accountSideFiles(dir: string, accountFile: string): Promise<string[]> {
+  const prefix = `${basename(accountFile)}.`
+  try {
+    return (await readdir(dir)).filter((n) => n.startsWith(prefix))
+  } catch {
+    return []
+  }
+}
 
 /** Every entry folder under erased/, newest first, whatever it holds. */
 async function entryNames(l: DataLayout): Promise<{ name: string; erasedAt: number }[]> {
@@ -72,6 +86,8 @@ export async function quarantineData(l: DataLayout, now = Date.now(), log: (text
   const items = parts(l)
     .filter((p) => existsSync(p.live))
     .map((p) => ({ from: p.live, name: p.name }))
+  const sides = (await accountSideFiles(l.dataDir, l.accountFile)).map((name) => ({ from: join(l.dataDir, name), name }))
+  items.splice(items.findIndex((i) => i.name === 'account.json') + 1, 0, ...sides)
   if (existsSync(l.safetyDir)) items.push({ from: l.safetyDir, name: 'safety-backups' })
   if (!items.length) return null
 
@@ -98,7 +114,7 @@ export async function quarantineData(l: DataLayout, now = Date.now(), log: (text
     }
   } catch (err) {
     for (const m of moved.reverse()) {
-      await rename(m.to, m.from).catch((e: unknown) => log(`erase rollback: could not move ${m.to} back to ${m.from}: ${e instanceof Error ? e.message : String(e)}`))
+      await rename(m.to, m.from).catch((e: unknown) => log(`erase rollback: could not move ${basename(m.from)} back (${fsErrorText(e)}); it stays in erased/${basename(dirname(m.to))}`))
     }
     // Only empty folders are removed here: anything that could not be moved back stays in the entry.
     await rmdir(dir).catch(() => undefined)
@@ -136,6 +152,10 @@ export async function restoreErased(l: DataLayout, name: string): Promise<void> 
   // The account comes back last: an account without its database would start an empty one.
   for (const p of [...parts(l)].reverse()) {
     if (existsSync(join(dir, p.name))) await rename(join(dir, p.name), p.live)
+  }
+  // The copies that belong to the account (.bak, .damaged-*): only where nothing of that name is here now.
+  for (const name of await accountSideFiles(dir, l.accountFile)) {
+    if (!existsSync(join(l.dataDir, name))) await rename(join(dir, name), join(l.dataDir, name))
   }
   await rm(dir, { recursive: true, force: true })
 }

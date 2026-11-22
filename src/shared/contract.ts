@@ -120,6 +120,8 @@ export const contract = {
 
   /* ----- Login ----- */
   'auth.status': { input: empty, output: out<AuthStatus>() },
+  /** Error screen, "Try again": reads the account file again (a plain status never does). */
+  'auth.retry': { input: empty, output: out<AuthStatus>() },
   'auth.setup': {
     input: z.discriminatedUnion('mode', [
       z.object({ mode: z.literal('password'), password }).strict(),
@@ -132,6 +134,10 @@ export const contract = {
     output: out<AuthStatus>()
   },
   'auth.forgetComputer': { input: empty, output: out<AuthStatus>() },
+  /** Error screen: opens the data folder in the file manager. Takes no path; the main process knows it. */
+  'auth.showDataFolder': { input: empty, output: out<{ ok: boolean }>() },
+  /** Error screen: a short text about the data files (names, sizes, dates; never contents) to copy for support. */
+  'auth.diagnostics': { input: empty, output: out<{ text: string }>() },
   'auth.unlockRecovery': { input: z.object({ recoveryKey: z.string().min(10).max(80) }).strict(), output: out<AuthStatus>() },
   'auth.lock': { input: empty, output: out<AuthStatus>() },
   /** Moves the data, safety backups included, into quarantine for 30 days (restorable with the password or recovery key) and starts fresh. */
@@ -724,12 +730,15 @@ export const PUBLIC_OPS: readonly OpName[] = [
   'prefs.get',
   'prefs.update',
   'auth.status',
+  'auth.retry',
   'auth.setup',
   'sync.pickJoin',
   'sync.cancelJoin',
   'auth.unlock',
   'auth.unlockRecovery',
   'auth.erase',
+  'auth.showDataFolder',
+  'auth.diagnostics',
   'auth.restoreErased',
   'transfer.pick',
   'transfer.import'

@@ -325,6 +325,8 @@ export interface AuthStatus {
   legacyData: boolean
   /** Erased copies that can still be restored (kept 30 days), newest first. */
   erased: ErasedCopy[]
+  /** The account file was restored from its safety copy, which was written at this time (ISO): a later password or two-step change may be lost. Until the next unlock. */
+  restoredFrom: string | null
   keyProtection: KeyProtection
   error: { code: string; message: string } | null
 }
