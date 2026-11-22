@@ -55,6 +55,12 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 const account = (tag: string): AccountData => ({ version: 2, mode: 'password', tag }) as unknown as AccountData
 const sealed = (tag: string): string => JSON.stringify({ format: 'kasboek-account', version: 2, seal: 'os', data: Buffer.from(`sealed:${JSON.stringify(account(tag))}`).toString('base64') })
 
+const realPlatform = process.platform
+/** The code under test branches on the platform: every test that depends on it states it (restored after each test). */
+const setPlatform = (p: NodeJS.Platform): void => {
+  Object.defineProperty(process, 'platform', { value: p })
+}
+
 describe('account file', () => {
   let store: typeof import('../src/main/security/account-store')
   const file = (n: string): string => join(mocks.dataDir, n)
@@ -72,6 +78,8 @@ describe('account file', () => {
   afterEach(() => {
     vi.useRealTimers()
     vi.restoreAllMocks()
+    Object.defineProperty(process, 'platform', { value: realPlatform })
+    rmSync(mocks.dataDir, { recursive: true, force: true })
   })
 
   /** Runs a load whose unsealing never works, through the waits (only setTimeout is faked: the file I/O is real). */
@@ -94,8 +102,11 @@ describe('account file', () => {
 
   it('writes the temporary file, flushes it, renames it, then flushes the folder', async () => {
     await store.saveAccount(account('one'))
-    const main = mocks.steps.slice(0, mocks.steps.indexOf('fsync ' + mocks.dataDir.split(/[\\/]/).pop()) + 1)
-    expect(main).toEqual(['fsync account.json.tmp', 'rename account.json.tmp -> account.json', `fsync ${mocks.dataDir.split(/[\\/]/).pop()}`])
+    const dirStep = `fsync ${mocks.dataDir.split(/[\\/]/).pop()}`
+    // Windows can't open a folder to flush it: there the last step does not exist (and the code accepts that).
+    const flushesFolder = process.platform !== 'win32'
+    const main = flushesFolder ? mocks.steps.slice(0, mocks.steps.indexOf(dirStep) + 1) : mocks.steps.slice(0, mocks.steps.indexOf('fsync account.json.bak.tmp'))
+    expect(main).toEqual(['fsync account.json.tmp', 'rename account.json.tmp -> account.json', ...(flushesFolder ? [dirStep] : [])])
     // The safety copy is written the same way, after the account itself.
     expect(mocks.steps.indexOf('fsync account.json.bak.tmp')).toBeGreaterThan(main.length - 1)
     expect(mocks.steps).toContain('rename account.json.bak.tmp -> account.json.bak')
@@ -132,6 +143,7 @@ describe('account file', () => {
     writeFileSync(file('account.json.bak'), sealed('old'))
     writeFileSync(file('account.json'), sealed('new'))
     mocks.decrypt.mockRejectedValue(new Error('cannot decrypt'))
+    setPlatform('linux')
     expect(await failingLoad()).toMatchObject({ code: 'auth.other_device' })
     expect(readFileSync(file('account.json'), 'utf8')).toBe(sealed('new'))
     expect(readFileSync(file('account.json.bak'), 'utf8')).toBe(sealed('old'))
@@ -164,8 +176,6 @@ describe('account file', () => {
   })
 
   describe('when the unsealing always fails', () => {
-    const platform = process.platform
-    afterEach(() => Object.defineProperty(process, 'platform', { value: platform }))
     const fail = async (): Promise<unknown> => {
       writeFileSync(file('account.json'), sealed('one'))
       mocks.decrypt.mockRejectedValue(new Error('Decryption failed'))
@@ -173,7 +183,7 @@ describe('account file', () => {
     }
 
     it('names the missing Windows key file (Local State)', async () => {
-      Object.defineProperty(process, 'platform', { value: 'win32' })
+      setPlatform('win32')
       const err = await fail()
       expect(err).toMatchObject({ code: 'auth.key_missing', seal: 'os' })
       expect((err as Error).message).toContain('Local State')
@@ -181,13 +191,19 @@ describe('account file', () => {
     })
 
     it('is "other device" when Local State is there', async () => {
-      Object.defineProperty(process, 'platform', { value: 'win32' })
+      setPlatform('win32')
       writeFileSync(file('Local State'), '{}')
       expect(await fail()).toMatchObject({ code: 'auth.other_device', seal: 'os' })
     })
 
-    it('is "other device" elsewhere, where Local State means nothing', async () => {
-      Object.defineProperty(process, 'platform', { value: 'darwin' })
+    it.each(['linux', 'darwin'] as const)('is "other device" on %s, where Local State means nothing', async (p) => {
+      setPlatform(p)
+      expect(await fail()).toMatchObject({ code: 'auth.other_device' })
+    })
+
+    it('is "other device" on linux even when a Local State file is there', async () => {
+      setPlatform('linux')
+      writeFileSync(file('Local State'), '{}')
       expect(await fail()).toMatchObject({ code: 'auth.other_device' })
     })
   })

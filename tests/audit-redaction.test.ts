@@ -51,8 +51,10 @@ describe('audit log redaction', () => {
     const file = join(mkdtempSync(join(tmpdir(), 'kb-audit-x-')), 'export.db')
     snapshotEncrypted(ctx.db, file)
     // The snapshot is encrypted anyway; check the rows rather than the bytes, and the bytes for good measure.
-    expect(readFileSync(file).includes(KEY)).toBe(false)
     expect(JSON.stringify(ctx.db.prepare('SELECT * FROM audit_log').all())).not.toContain(KEY)
+    // Closed first: Windows does not let the file be read while the database still holds it.
+    ctx.db.close()
+    expect(readFileSync(file).includes(KEY)).toBe(false)
   })
 
   it('removes keys that older versions stored, and leaves other rows alone', () => {
