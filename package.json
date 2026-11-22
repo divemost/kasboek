@@ -1,7 +1,7 @@
 {
   "name": "kasboek",
   "productName": "Kasboek",
-  "version": "0.22.2",
+  "version": "0.22.3",
   "description": "A simple, local-first budget app you can run with Claude.",
   "main": "./out/main/index.js",
   "author": "Kasboek",
