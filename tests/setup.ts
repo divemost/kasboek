@@ -17,6 +17,7 @@ vi.mock('@core/crypto', async (importOriginal) => {
 vi.mock('@core/database', async (importOriginal) => {
   const mod = await importOriginal<typeof import('@core/database')>()
   const { migrate } = await import('@core/migrations')
+  const { scrubAuditLog } = await import('@core/audit')
   return {
     ...mod,
     openDatabase(file: string, keyHex: string, opts: { migrate?: boolean } = {}) {
@@ -26,6 +27,7 @@ vi.mock('@core/database', async (importOriginal) => {
       if (opts.migrate !== false) {
         try {
           migrate(db)
+          scrubAuditLog(db)
         } catch (err) {
           db.close()
           throw err

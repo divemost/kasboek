@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3-multiple-ciphers'
+import { scrubAuditLog } from './audit'
 import { AppError } from './errors'
 import { installFx } from './fx'
 import { migrate } from './migrations'
@@ -34,7 +35,10 @@ export function openDatabase(file: string, keyHex: string, opts: { migrate?: boo
   db.pragma('secure_delete = ON')
   db.pragma('journal_mode = DELETE')
   try {
-    if (opts.migrate !== false) migrate(db)
+    if (opts.migrate !== false) {
+      migrate(db)
+      scrubAuditLog(db)
+    }
     installFx(db)
   } catch (err) {
     // A handle left open would keep the file locked (on Windows it cannot even be deleted).
