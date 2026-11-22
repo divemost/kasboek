@@ -16,10 +16,15 @@ export function auditDetails(action: string, input: unknown): string {
 
 /**
  * Empties the details that older versions stored for operations that are redacted now (the provider API key among them). Safe to repeat: once
- * the rows are empty it only reads the table. Deliberately not a schema migration.
+ * the rows are empty it only reads the table. Deliberately not a schema migration. A busy or read-only database only skips the clean-up
+ * (it is tried again at the next unlock): it never keeps the person out.
  */
 export function scrubAuditLog(db: Db): void {
-  const actions = Object.keys(contract).filter(isRedacted)
-  const marks = actions.map(() => '?').join(', ')
-  db.prepare(`UPDATE audit_log SET details = '{}' WHERE action IN (${marks}) AND details <> '{}'`).run(...actions)
+  try {
+    const actions = Object.keys(contract).filter(isRedacted)
+    const marks = actions.map(() => '?').join(', ')
+    db.prepare(`UPDATE audit_log SET details = '{}' WHERE action IN (${marks}) AND details <> '{}'`).run(...actions)
+  } catch (err) {
+    console.warn('[db] could not clean the audit log:', (err as { code?: string } | undefined)?.code ?? 'unknown')
+  }
 }

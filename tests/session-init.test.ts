@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { startupLog } from '../src/main/graphics'
 
 const mocks = vi.hoisted(() => ({
   loadAccount: vi.fn<() => Promise<unknown>>()
@@ -19,7 +20,8 @@ vi.mock('../src/main/security/account-store', () => ({
   loadAccount: mocks.loadAccount,
   readLegacyDbKey: async () => null,
   removeLegacyKeystore: vi.fn(),
-  saveAccount: vi.fn()
+  saveAccount: vi.fn(),
+  takeRestoreNotice: () => null
 }))
 
 describe('reading the account', () => {
@@ -55,5 +57,81 @@ describe('reading the account', () => {
     await Promise.all([retry, asked])
     expect(states).toEqual(['setup'])
     expect(mocks.loadAccount).toHaveBeenCalledTimes(1)
+  })
+
+  describe('after a failed read', () => {
+    const fail = (code = 'auth.other_device', message = 'could not unseal'): void => {
+      mocks.loadAccount.mockReset().mockRejectedValue(Object.assign(new Error(message), { code }))
+    }
+    beforeEach(() => {
+      vi.mocked(startupLog).mockClear()
+    })
+
+    it('does not read the file again on every status call, only on "Try again"', async () => {
+      vi.resetModules()
+      const session = await import('../src/main/session')
+      fail()
+      await session.initSession()
+      mocks.loadAccount.mockClear()
+      for (let i = 0; i < 3; i++) expect((await session.status()).state).toBe('locked')
+      expect(mocks.loadAccount).not.toHaveBeenCalled()
+      expect((await session.retryRead()).state).toBe('locked')
+      expect(mocks.loadAccount).toHaveBeenCalledTimes(1)
+      mocks.loadAccount.mockResolvedValue(null)
+      expect((await session.retryRead()).state).toBe('setup')
+    })
+
+    it('writes an identical failure to startup.log once', async () => {
+      vi.resetModules()
+      const session = await import('../src/main/session')
+      fail()
+      await session.initSession()
+      await session.retryRead()
+      await session.retryRead()
+      expect(vi.mocked(startupLog)).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  describe('replacing the data', () => {
+    it('refuses while locked when the account turned out fine, but goes ahead when it still can’t be read', async () => {
+      vi.resetModules()
+      const session = await import('../src/main/session')
+      mocks.loadAccount.mockReset().mockRejectedValue(new Error('keyring locked'))
+      await session.initSession()
+      expect(session.beginReplace().wasUnlocked).toBe(false)
+
+      mocks.loadAccount.mockReset().mockResolvedValue({ mode: 'password', twoFactor: false, attempts: { failed: 0, lastFailedAt: null }, slots: {} })
+      await session.retryRead()
+      await session.initSession()
+      expect((await session.status()).state).toBe('locked')
+      expect(() => session.beginReplace()).toThrow(expect.objectContaining({ code: 'auth.locked' }))
+    })
+
+    it('throws away a read that began before the data was replaced', async () => {
+      vi.resetModules()
+      const session = await import('../src/main/session')
+      let release: (v: unknown) => void = () => undefined
+      mocks.loadAccount.mockReset().mockImplementation(() => new Promise((resolve) => (release = resolve)))
+      const late = session.initSession()
+      session.beginReplace()
+      release({ mode: 'password', twoFactor: false, attempts: { failed: 0, lastFailedAt: null }, slots: {} })
+      await late
+      expect((await session.status()).state).toBe('setup')
+    })
+
+    it('runs one import at a time and keeps status() from reading the account meanwhile', async () => {
+      vi.resetModules()
+      const session = await import('../src/main/session')
+      mocks.loadAccount.mockReset().mockRejectedValue(new Error('keyring locked'))
+      await session.initSession()
+      mocks.loadAccount.mockClear()
+      const end = session.beginImport()
+      expect(() => session.beginImport()).toThrow(expect.objectContaining({ code: 'transfer.busy' }))
+      await expect(session.setup('password', 'a long strong passphrase 2026!')).rejects.toMatchObject({ code: 'transfer.busy' })
+      await session.retryRead()
+      expect(mocks.loadAccount).not.toHaveBeenCalled()
+      end()
+      expect(() => session.beginImport()()).not.toThrow()
+    })
   })
 })

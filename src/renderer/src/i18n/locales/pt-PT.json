@@ -664,6 +664,7 @@
     "eraseConfirm": "Apagar tudo",
     "cantOpen": "O Kasboek não consegue abrir os seus dados",
     "tryAgain": "Tentar novamente",
+    "restoredBackup": "O Kasboek restaurou a cópia de segurança do ficheiro da conta de {{date}}. Se desde então alterou a palavra-passe ou o início de sessão em dois passos, altere-os novamente.",
     "open": {
       "keyMissing": "Os dados do Kasboek estão bloqueados com uma chave que o Windows guarda junto deles, e falta o ficheiro de chave do Windows (Local State) na pasta de dados do Kasboek, por isso os dados não podem ser desbloqueados aqui. Isto acontece quando a pasta foi copiada sem esse ficheiro, ou de outro computador ou sessão. A palavra-passe e a chave de recuperação não ajudam; uma cópia de segurança ou exportação (ficheiro .kasboek) ajuda.",
       "sealed": "Os dados do Kasboek estão bloqueados com uma chave que o seu sistema operativo guarda para esta sessão (Windows, porta-chaves do macOS ou porta-chaves do Linux), e essa chave não pode ser lida neste computador ou com esta conta de utilizador neste momento. Isto acontece quando a pasta de dados foi copiada de outro computador ou sessão, ou depois de a chave do sistema ser reposta. A palavra-passe e a chave de recuperação não ajudam enquanto essa chave não puder ser lida; uma cópia de segurança ou exportação (ficheiro .kasboek) ajuda.",

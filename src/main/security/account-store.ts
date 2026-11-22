@@ -3,13 +3,15 @@
  * Keychain on macOS, Secret Service on Linux). This seal is what binds the data to this
  * computer and user account: a copied file can't be opened elsewhere, even with the password.
  */
+import { randomUUID } from 'node:crypto'
 import { existsSync, statSync } from 'node:fs'
-import { open, readdir, readFile, rename, rm } from 'node:fs/promises'
+import { open, readdir, readFile, rename, rm, stat } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { safeStorage } from 'electron'
 import type { AccountData } from '@core/account'
 import { AppError } from '@core/errors'
 import type { KeyProtection } from '@shared/types'
+import { errCode, fsErrorText } from '../fs-error'
 import { startupLog } from '../graphics'
 import { paths } from '../paths'
 
@@ -66,11 +68,6 @@ export function accountExists(): boolean {
   return existsSync(paths.accountFile)
 }
 
-const errCode = (err: unknown): string => {
-  const e = err as NodeJS.ErrnoException
-  return e?.code ?? (err instanceof Error ? err.name : 'unknown')
-}
-
 async function decryptWithRetry(data: Buffer): Promise<string> {
   let last: unknown
   for (const delay of [0, ...DECRYPT_RETRY_DELAYS_MS]) {
@@ -120,17 +117,27 @@ function sealOf(raw: string): SealType {
   }
 }
 
-/** Writes through a temporary file: flushed to disk, then renamed over the target, then the folder entry is flushed where possible. */
+/**
+ * Writes through a temporary file with a name of its own (so two writes never share one): created new, flushed to
+ * disk, then renamed over the target, then the folder entry is flushed where possible. The name stays under the
+ * `account.json.` prefix, so a leftover of a crash is found and removed with the other copies.
+ */
 async function writeDurable(file: string, content: string): Promise<void> {
-  const tmp = file + '.tmp'
-  const handle = await open(tmp, 'w', 0o600)
+  const tmp = `${file}.tmp-${randomUUID()}`
   try {
-    await handle.writeFile(content)
-    await handle.sync()
-  } finally {
-    await handle.close()
+    const handle = await open(tmp, 'wx', 0o600)
+    try {
+      if (process.platform !== 'win32') await handle.chmod(0o600)
+      await handle.writeFile(content)
+      await handle.sync()
+    } finally {
+      await handle.close()
+    }
+    await rename(tmp, file)
+  } catch (err) {
+    await rm(tmp, { force: true }).catch(() => undefined)
+    throw err
   }
-  await rename(tmp, file)
   await syncDirectory(dirname(file))
 }
 
@@ -150,40 +157,64 @@ async function syncDirectory(dir: string): Promise<void> {
   }
 }
 
-/** Keeps account.json.bak equal to the sealed account file. Best effort: a failure is logged and never stops the caller. */
+/** Saves and refreshes run one after the other: two overlapping ones could otherwise interleave their files. */
+let writes: Promise<unknown> = Promise.resolve()
+function serialized<T>(task: () => Promise<T>): Promise<T> {
+  const run = writes.then(task, task)
+  writes = run.catch(() => undefined)
+  return run
+}
+
+/**
+ * Keeps account.json.bak equal to the sealed account file. When that fails the copy is removed: an old one must not
+ * stay behind, or an automatic restore would bring back an outdated account. A failure is logged and never stops the caller.
+ */
 async function refreshBackup(raw: string): Promise<void> {
   try {
     if (existsSync(bakFile()) && (await readFile(bakFile(), 'utf8')) === raw) return
     await writeDurable(bakFile(), raw)
   } catch (err) {
-    startupLog(`account: could not update account.json.bak (${errCode(err)})`)
+    startupLog(`account: could not update account.json.bak (${fsErrorText(err)})`)
+    await rm(bakFile(), { force: true }).catch((e: unknown) => startupLog(`account: could not remove the outdated account.json.bak (${fsErrorText(e)})`))
   }
 }
 
+let restoredAt: string | null = null
+
+/** When the safety copy that replaced a damaged or missing account file was last written (ISO); asking clears it. */
+export function takeRestoreNotice(): string | null {
+  const at = restoredAt
+  restoredAt = null
+  return at
+}
+
 /**
- * Reads the account. When account.json itself is empty or cut off, account.json.bak is tried: if that opens, it
- * becomes account.json and the damaged file is kept as account.json.damaged-<time>. The backup is never looked at
+ * Reads the account. When account.json itself is empty, cut off or missing, account.json.bak is tried: if that opens, it
+ * becomes account.json and a damaged file is kept as account.json.damaged-<time>. The backup is never looked at
  * while account.json is readable, so an older copy can't replace a good file.
  */
 export async function loadAccount(): Promise<AccountData | null> {
-  if (!existsSync(paths.accountFile)) return null
+  if (!existsSync(paths.accountFile)) {
+    if (!existsSync(bakFile())) return null
+    return serialized(() => recoverFromBackup(new AccountReadError('auth.corrupt', 'account.json is missing', 'unknown', true), null))
+  }
   let raw: string
   try {
     raw = await readFile(paths.accountFile, 'utf8')
   } catch (err) {
-    throw new AccountReadError('auth.unreadable', `account.json could not be read (${errCode(err)}${(err as NodeJS.ErrnoException).syscall ? `, ${(err as NodeJS.ErrnoException).syscall}` : ''})`, 'unknown')
+    throw new AccountReadError('auth.unreadable', `account.json could not be read (${fsErrorText(err)})`, 'unknown')
   }
   try {
     const account = await openSealed(raw, 'account.json')
-    await refreshBackup(raw)
+    await serialized(() => refreshBackup(raw))
     return account
   } catch (err) {
     if (!(err instanceof AccountReadError) || !err.recoverable) throw err
-    return recoverFromBackup(err, raw)
+    return serialized(() => recoverFromBackup(err, raw))
   }
 }
 
-async function recoverFromBackup(damaged: AccountReadError, damagedRaw: string): Promise<AccountData> {
+async function recoverFromBackup(damaged: AccountReadError, damagedRaw: string | null): Promise<AccountData> {
   let bak: string
   try {
     bak = await readFile(bakFile(), 'utf8')
@@ -194,33 +225,47 @@ async function recoverFromBackup(damaged: AccountReadError, damagedRaw: string):
   try {
     account = await openSealed(bak, 'account.json.bak')
   } catch (err) {
-    throw new AccountReadError('auth.corrupt', `${damaged.message}; account.json.bak could not be used (${err instanceof Error ? err.message : 'unknown'})`, sealOf(bak))
+    throw new AccountReadError('auth.corrupt', `${damaged.message}; account.json.bak could not be used (${err instanceof AccountReadError ? err.message : 'unknown'})`, sealOf(bak))
   }
-  const keep = `${paths.accountFile}.damaged-${Date.now()}`
-  await rename(paths.accountFile, keep)
+  const bakDate = (await stat(bakFile()).catch(() => null))?.mtime.toISOString() ?? null
+  const keep = damagedRaw === null ? null : `${paths.accountFile}.damaged-${Date.now()}`
+  if (keep) await rename(paths.accountFile, keep)
   try {
     await writeDurable(paths.accountFile, bak)
   } catch (err) {
     // Put the damaged file back: nothing may be left half-way.
-    await rename(keep, paths.accountFile).catch(() => undefined)
-    throw new AccountReadError('auth.unreadable', `account.json.bak was good but could not be restored (${errCode(err)})`, sealOf(bak))
+    if (keep) await rename(keep, paths.accountFile).catch(() => undefined)
+    throw new AccountReadError('auth.unreadable', `account.json.bak was good but could not be restored (${fsErrorText(err)})`, sealOf(bak))
   }
-  startupLog(`account: account.json was ${damagedRaw.trim() ? 'damaged' : 'empty'} (${damagedRaw.length} bytes); restored from account.json.bak, kept the old file as ${keep.split(/[\\/]/).pop()}`)
+  restoredAt = bakDate
+  const was = damagedRaw === null ? 'missing' : `${damagedRaw.trim() ? 'damaged' : 'empty'} (${damagedRaw.length} bytes)`
+  startupLog(`account: account.json was ${was}; restored from account.json.bak${keep ? `, kept the old file as ${keep.split(/[\\/]/).pop()}` : ''}`)
   return account
 }
 
-export async function saveAccount(account: AccountData): Promise<void> {
-  const json = JSON.stringify(account)
-  const os = await osAvailable()
-  const file: AccountFile = {
-    format: 'kasboek-account',
-    version: 2,
-    seal: os ? 'os' : 'none',
-    data: os ? (await safeStorage.encryptStringAsync(json)).toString('base64') : Buffer.from(json).toString('base64')
-  }
-  const text = JSON.stringify(file)
-  await writeDurable(paths.accountFile, text)
-  await refreshBackup(text)
+/**
+ * Seals and writes the account. A change of credentials (`credentials`) must not leave an older safety copy behind: the
+ * copy is removed first, and when that is not possible the save fails before anything was written.
+ */
+export async function saveAccount(account: AccountData, opts: { credentials?: boolean } = {}): Promise<void> {
+  return serialized(async () => {
+    try {
+      const json = JSON.stringify(account)
+      const os = await osAvailable()
+      const file: AccountFile = {
+        format: 'kasboek-account',
+        version: 2,
+        seal: os ? 'os' : 'none',
+        data: os ? (await safeStorage.encryptStringAsync(json)).toString('base64') : Buffer.from(json).toString('base64')
+      }
+      const text = JSON.stringify(file)
+      if (opts.credentials) await rm(bakFile(), { force: true })
+      await writeDurable(paths.accountFile, text)
+      await refreshBackup(text)
+    } catch (err) {
+      throw new AppError('auth.save_failed', `The account file could not be saved (${fsErrorText(err)}).`)
+    }
+  })
 }
 
 /** One line for startup.log about a failed read: codes, sizes and states only, never contents or secrets. */

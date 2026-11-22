@@ -663,6 +663,7 @@
     "eraseConfirm": "Alles löschen",
     "cantOpen": "Kasboek kann seine Daten nicht öffnen",
     "tryAgain": "Erneut versuchen",
+    "restoredBackup": "Kasboek hat die Sicherheitskopie der Kontodatei vom {{date}} wiederhergestellt. Falls du seitdem dein Passwort oder die Zwei-Schritt-Anmeldung geändert hast, ändere sie bitte erneut.",
     "open": {
       "keyMissing": "Die Daten von Kasboek sind mit einem Schlüssel gesperrt, den Windows daneben aufbewahrt, und die Windows-Schlüsseldatei (Local State) fehlt im Datenordner von Kasboek. Die Daten lassen sich hier daher nicht entsperren. Das passiert, wenn der Ordner ohne diese Datei oder von einem anderen Computer oder einer anderen Anmeldung kopiert wurde. Passwort und Wiederherstellungsschlüssel helfen nicht; eine Sicherung oder ein Export (.kasboek-Datei) hilft.",
       "sealed": "Die Daten von Kasboek sind mit einem Schlüssel gesperrt, den Ihr Betriebssystem für diese Anmeldung verwahrt (Windows, macOS-Schlüsselbund oder Linux-Schlüsselbund). Dieser Schlüssel kann auf diesem Computer oder mit diesem Benutzerkonto gerade nicht gelesen werden. Das passiert, wenn der Datenordner von einem anderen Computer oder einer anderen Anmeldung kopiert wurde oder der Systemschlüssel zurückgesetzt wurde. Passwort und Wiederherstellungsschlüssel helfen nicht, solange der Schlüssel unlesbar ist; eine Sicherung oder ein Export (.kasboek-Datei) hilft.",

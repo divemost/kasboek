@@ -664,6 +664,7 @@
     "eraseConfirm": "Tout effacer",
     "cantOpen": "Kasboek ne peut pas ouvrir ses données",
     "tryAgain": "Réessayer",
+    "restoredBackup": "Kasboek a restauré la copie de sécurité du fichier de compte du {{date}}. Si vous avez modifié votre mot de passe ou la connexion en deux étapes depuis, modifiez-les à nouveau.",
     "open": {
       "keyMissing": "Les données de Kasboek sont verrouillées par une clé que Windows conserve à côté, et le fichier de clé Windows (Local State) est absent du dossier de données de Kasboek : les données ne peuvent donc pas être déverrouillées ici. Cela arrive quand le dossier a été copié sans ce fichier, ou depuis un autre ordinateur ou une autre session. Votre mot de passe et votre clé de récupération n’y changent rien ; une sauvegarde ou un export (fichier .kasboek) le peut.",
       "sealed": "Les données de Kasboek sont verrouillées par une clé que votre système d’exploitation conserve pour cette session (Windows, trousseau macOS ou trousseau Linux), et cette clé ne peut pas être lue sur cet ordinateur ou avec ce compte utilisateur pour le moment. Cela arrive quand le dossier de données a été copié depuis un autre ordinateur ou une autre session, ou après la réinitialisation de la clé système. Votre mot de passe et votre clé de récupération n’y changent rien tant que cette clé est illisible ; une sauvegarde ou un export (fichier .kasboek) le peut.",

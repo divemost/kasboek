@@ -662,6 +662,7 @@
     "eraseConfirm": "Alles wissen",
     "cantOpen": "Kasboek kan zijn gegevens niet openen",
     "tryAgain": "Opnieuw proberen",
+    "restoredBackup": "Kasboek heeft de reservekopie van het accountbestand van {{date}} teruggezet. Als je sindsdien je wachtwoord of tweestapsverificatie hebt gewijzigd, wijzig die dan opnieuw.",
     "open": {
       "keyMissing": "De gegevens van Kasboek zijn vergrendeld met een sleutel die Windows ernaast bewaart, en het Windows-sleutelbestand (Local State) ontbreekt in de gegevensmap van Kasboek, dus de gegevens kunnen hier niet worden ontgrendeld. Dat gebeurt als de map zonder dat bestand is gekopieerd, of van een andere computer of login. Je wachtwoord en herstelsleutel helpen niet; een back-up of export (.kasboek-bestand) wel.",
       "sealed": "De gegevens van Kasboek zijn vergrendeld met een sleutel die je besturingssysteem bewaart voor deze login (Windows, macOS-sleutelhanger of een Linux-sleutelbos). Die sleutel kan op deze computer of met dit gebruikersaccount nu niet worden gelezen. Dat gebeurt als de gegevensmap van een andere computer of login is gekopieerd, of nadat de systeemsleutel is gereset. Je wachtwoord en herstelsleutel helpen niet zolang die sleutel onleesbaar is; een back-up of export (.kasboek-bestand) wel.",

@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -9,7 +9,9 @@ const mocks = vi.hoisted(() => ({
   dataDir: '',
   decrypt: vi.fn<(data: Buffer) => Promise<{ result: string }>>(),
   failRead: null as string | null,
-  steps: [] as string[]
+  steps: [] as string[],
+  opened: [] as { name: string; flags: unknown; mode: unknown }[],
+  failWrite: null as string | null
 }))
 
 vi.mock('electron', () => ({
@@ -31,11 +33,14 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       return (real.readFile as (...a: unknown[]) => Promise<unknown>)(path, ...rest)
     },
     rename: async (from: string, to: string) => {
-      mocks.steps.push(`rename ${from.split(/[\\/]/).pop()} -> ${to.split(/[\\/]/).pop()}`)
+      const plain = (p: string): string | undefined => p.split(/[\\/]/).pop()?.replace(/\.tmp-[0-9a-f-]{36}$/, '.tmp')
+      mocks.steps.push(`rename ${plain(from)} -> ${plain(to)}`)
       return real.rename(from, to)
     },
     open: async (path: string, ...rest: unknown[]) => {
-      const name = String(path).split(/[\\/]/).pop()
+      const name = String(path).split(/[\\/]/).pop()?.replace(/\.tmp-[0-9a-f-]{36}$/, '.tmp')
+      mocks.opened.push({ name: name!, flags: rest[0], mode: rest[1] })
+      if (mocks.failWrite && name === mocks.failWrite) throw Object.assign(new Error(`EIO: cannot write '${String(path)}'`), { code: 'EIO', syscall: 'open' })
       const handle = await (real.open as (...a: unknown[]) => Promise<import('node:fs/promises').FileHandle>)(path, ...rest)
       const sync = handle.sync.bind(handle)
       handle.sync = async () => {
@@ -59,6 +64,8 @@ describe('account file', () => {
     mocks.dataDir = mkdtempSync(join(tmpdir(), 'kb-acct-'))
     mocks.failRead = null
     mocks.steps.length = 0
+    mocks.opened.length = 0
+    mocks.failWrite = null
     mocks.decrypt.mockReset().mockImplementation(async (b) => ({ result: b.toString().replace(/^sealed:/, '') }))
     store = await import('../src/main/security/account-store')
   })
@@ -213,5 +220,108 @@ describe('account file', () => {
     expect(readdirSync(mocks.dataDir).sort()).toEqual(['account.json.bak', 'prefs.json'])
     await store.removeAccountSideFiles(true)
     expect(readdirSync(mocks.dataDir)).toEqual(['prefs.json'])
+  })
+
+  it('uses a temporary file of its own for every write, created new and private', async () => {
+    await store.saveAccount(account('one'))
+    await store.saveAccount(account('two'))
+    const tmps = mocks.opened.filter((o) => o.name.endsWith('.tmp'))
+    expect(tmps.length).toBeGreaterThanOrEqual(4)
+    for (const o of tmps) expect(o).toMatchObject({ flags: 'wx', mode: 0o600 })
+    expect(readdirSync(mocks.dataDir).filter((n) => n.includes('.tmp'))).toEqual([])
+    if (process.platform !== 'win32') expect(statSync(file('account.json')).mode & 0o777).toBe(0o600)
+  })
+
+  it('never reuses a temporary name: a leftover of an earlier write does not get in the way', async () => {
+    writeFileSync(file('account.json.tmp'), 'leftover')
+    await store.saveAccount(account('one'))
+    expect(tagOf(await store.loadAccount())).toBe('one')
+    expect(readFileSync(file('account.json.tmp'), 'utf8')).toBe('leftover')
+    expect((await store.accountSideFiles()).sort()).toEqual(['account.json.bak', 'account.json.tmp'])
+  })
+
+  it('runs overlapping saves one after the other, so the last one asked for wins in both files', async () => {
+    await Promise.all([1, 2, 3, 4, 5].map((n) => store.saveAccount(account(`v${n}`))))
+    expect(tagOf(await store.loadAccount())).toBe('v5')
+    expect(readFileSync(file('account.json.bak'), 'utf8')).toBe(readFileSync(file('account.json'), 'utf8'))
+    // Each save finished (renamed) before the next one opened its temporary file.
+    const order = mocks.steps.filter((s) => s.startsWith('rename account.json.tmp -> account.json') && !s.endsWith('.bak'))
+    expect(order).toHaveLength(5)
+    const firstRename = mocks.steps.indexOf('rename account.json.tmp -> account.json')
+    expect(mocks.steps.slice(0, firstRename).filter((s) => s === 'fsync account.json.tmp')).toHaveLength(1)
+  })
+
+  it('removes the safety copy when it can’t be refreshed, so an outdated one is never restored later', async () => {
+    await store.saveAccount(account('one'))
+    mocks.failWrite = 'account.json.bak.tmp'
+    await store.saveAccount(account('two'))
+    expect(tagOf(await store.loadAccount())).toBe('two')
+    expect(existsSync(file('account.json.bak'))).toBe(false)
+    const logged = vi.mocked((await import('../src/main/graphics')).startupLog).mock.calls.map((c) => String(c[0])).join('\n')
+    expect(logged).toContain('could not update account.json.bak (EIO, open)')
+    expect(logged).not.toContain(mocks.dataDir)
+  })
+
+  it('a change of credentials removes the old safety copy first, and fails before writing when it can’t', async () => {
+    await store.saveAccount(account('one'))
+    await store.saveAccount(account('two'), { credentials: true })
+    expect(tagOf(await store.loadAccount())).toBe('two')
+    expect(readFileSync(file('account.json.bak'), 'utf8')).toBe(readFileSync(file('account.json'), 'utf8'))
+
+    // A safety copy that can’t be removed (here a folder in its place).
+    rmSync(file('account.json.bak'))
+    mkdirSync(file('account.json.bak'))
+    writeFileSync(file('account.json.bak/inner'), 'x')
+    const before = readFileSync(file('account.json'), 'utf8')
+    const err = (await store.saveAccount(account('three'), { credentials: true }).catch((e: unknown) => e)) as Error & { code: string }
+    expect(err.code).toBe('auth.save_failed')
+    expect(err.message).not.toContain(mocks.dataDir)
+    expect(readFileSync(file('account.json'), 'utf8')).toBe(before)
+  })
+
+  it('says what happened, without paths, when a save fails', async () => {
+    mocks.failWrite = 'account.json.tmp'
+    const err = (await store.saveAccount(account('one')).catch((e: unknown) => e)) as Error & { code: string }
+    expect(err).toMatchObject({ code: 'auth.save_failed' })
+    expect(err.message).toBe('The account file could not be saved (EIO, open).')
+  })
+
+  it('hands out a notice with the date of the safety copy after restoring from it, once', async () => {
+    await store.saveAccount(account('one'))
+    const when = new Date('2026-03-04T10:20:30Z')
+    utimesSync(file('account.json.bak'), when, when)
+    writeFileSync(file('account.json'), '')
+    expect(tagOf(await store.loadAccount())).toBe('one')
+    expect(store.takeRestoreNotice()).toBe(when.toISOString())
+    expect(store.takeRestoreNotice()).toBeNull()
+  })
+
+  it('gives no notice for an account file that opens', async () => {
+    await store.saveAccount(account('one'))
+    await store.loadAccount()
+    expect(store.takeRestoreNotice()).toBeNull()
+  })
+
+  it('restores a missing account.json from the safety copy like an empty one, keeping nothing damaged', async () => {
+    await store.saveAccount(account('one'))
+    const when = new Date('2026-03-04T10:20:30Z')
+    utimesSync(file('account.json.bak'), when, when)
+    rmSync(file('account.json'))
+    expect(tagOf(await store.loadAccount())).toBe('one')
+    expect(readFileSync(file('account.json'), 'utf8')).toBe(sealed('one'))
+    expect(readdirSync(mocks.dataDir).some((n) => n.includes('damaged'))).toBe(false)
+    expect(store.takeRestoreNotice()).toBe(when.toISOString())
+  })
+
+  it('reports a missing account.json with an unusable safety copy as an error, never as "no account"', async () => {
+    writeFileSync(file('account.json.bak'), 'not an account')
+    const err = await store.loadAccount().catch((e: unknown) => e as Error)
+    expect(err).toMatchObject({ code: 'auth.corrupt' })
+    expect((err as Error).message).toContain('account.json is missing')
+    expect(existsSync(file('account.json'))).toBe(false)
+  })
+
+  it('has no account when neither file is there', async () => {
+    expect(await store.loadAccount()).toBeNull()
   })
 })

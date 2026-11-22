@@ -3,7 +3,6 @@
  */
 import { randomBytes } from 'node:crypto'
 import { existsSync } from 'node:fs'
-import { rename } from 'node:fs/promises'
 import { BrowserWindow, powerMonitor } from 'electron'
 import {
   checkThrottle,
@@ -31,10 +30,11 @@ import { newTotpSecret, otpauthUri, verifyTotp } from '@core/totp'
 import type { AppEvent } from '@shared/contract'
 import { checkPassword } from '@shared/password'
 import type { AuthStatus, ErasedCopy } from '@shared/types'
+import { fsErrorText } from './fs-error'
 import { startupLog } from './graphics'
 import { paths } from './paths'
 import { getPrefs } from './prefs'
-import { accountExists, AccountReadError, describeReadFailure, keyProtection, loadAccount, readLegacyDbKey, removeAccountSideFiles, removeLegacyKeystore, saveAccount, type SealType } from './security/account-store'
+import { accountExists, AccountReadError, describeReadFailure, keyProtection, loadAccount, readLegacyDbKey, removeAccountSideFiles, removeLegacyKeystore, saveAccount, takeRestoreNotice, type SealType } from './security/account-store'
 import { deviceAuthKind, peekDeviceAuthKind, releaseDeviceCheck, verifyDeviceUser } from './security/device-auth'
 import { keyIsOsProtected } from './security/device-mode'
 import { listErased, purgeErased, quarantineData, restoreErased } from './quarantine'
@@ -77,22 +77,56 @@ export function whenSessionReady(): Promise<void> {
 }
 
 let initRunning: Promise<void> | null = null
+/** Counts the moments the data on disk is replaced: a read that began before one holds an answer that is out of date. */
+let epoch = 0
+/** An import is running: nothing may read the account again or start from scratch until it is done. */
+let importing = false
+/** The last failed read as logged, so the same failure is written to startup.log once. */
+let lastFailureLine = ''
+/** When the safety copy that replaced a damaged or missing account file was written (ISO), until the next unlock. */
+let restoredFrom: string | null = null
 
 /** Reads the account file. Calls that overlap share one read; the previous result stays in place until the new one is known. */
 export function initSession(): Promise<void> {
-  initRunning ??= readAccount().finally(() => (initRunning = null))
+  if (!initRunning) {
+    const run = readAccount().finally(() => {
+      if (initRunning === run) initRunning = null
+    })
+    initRunning = run
+  }
   return initRunning
 }
 
+/** "Try again" on the error screen: the only way, after start-up, that a failed read is repeated. */
+export async function retryRead(): Promise<AuthStatus> {
+  if (loadError && !open && !importing) await initSession()
+  return status()
+}
+
 async function readAccount(): Promise<void> {
+  const mine = epoch
+  let next: AccountData | null = null
+  let failure: AppError | null = null
+  let line = ''
   try {
-    account = await loadAccount()
-    loadError = null
+    next = await loadAccount()
   } catch (err) {
     // Never the raw error as the message: the page shows its own text per code, and this only under "Details".
-    const failure = err instanceof AppError ? err : new AccountReadError('auth.unreadable', `unexpected error (${err instanceof Error ? err.name : 'unknown'})`, 'unknown')
-    loadError = failure
-    startupLog(await describeReadFailure(err).catch(() => `account read failed: ${failure.code}`))
+    failure = err instanceof AppError ? err : new AccountReadError('auth.unreadable', `unexpected error (${err instanceof Error ? err.name : 'unknown'})`, 'unknown')
+    line = await describeReadFailure(err).catch(() => `account read failed: ${failure!.code}`)
+  }
+  // The data was replaced (an import, an erase) or opened while this was reading: the answer is from before and must not land.
+  if (mine === epoch && !open) {
+    if (failure) {
+      loadError = failure
+      if (line !== lastFailureLine) startupLog(line)
+      lastFailureLine = line
+    } else {
+      account = next
+      loadError = null
+      lastFailureLine = ''
+      restoredFrom = takeRestoreNotice() ?? restoredFrom
+    }
   }
   // Erased copies are kept for 30 days, then removed.
   await purgeErased(paths).catch((err: unknown) => console.warn('[auth] could not clean up erased data:', err))
@@ -133,8 +167,8 @@ export function secrets(): { account: AccountData; master: Buffer; vault: Vault 
 }
 
 export async function status(): Promise<AuthStatus> {
-  // "Try again" after e.g. unlocking the system keyring.
-  if (loadError && !open) await initSession()
+  // A read that is already running is waited for (never "setup" while the file is being read); a failed one is not repeated here, only by retryRead().
+  if (initRunning) await initRunning
   const peek = peekDeviceAuthKind(() => broadcast({ type: 'auth.refresh' }), { deviceMode: account?.mode === 'device' })
   const device = peek ?? null
   return {
@@ -150,6 +184,7 @@ export async function status(): Promise<AuthStatus> {
     weakPassword: !!open && weakPassword,
     legacyData: !account && (await readLegacyDbKey()) !== null,
     erased: await erasedCopies(),
+    restoredFrom: account ? restoredFrom : null,
     keyProtection: await keyProtection(),
     error: loadError ? { code: loadError.code, message: loadError.message } : null
   }
@@ -158,11 +193,12 @@ export async function status(): Promise<AuthStatus> {
 function openWith(master: Buffer, vault: Vault): void {
   const database = openDatabase(paths.dbFile, vault.dbKey)
   open = { master, vault, db: database }
+  restoredFrom = null
 }
 
 /** Saves first and only then replaces the copy in memory, so a failed write never leaves memory ahead of the file. */
 async function persist(next: AccountData): Promise<void> {
-  await saveAccount(next)
+  await saveAccount(next, { credentials: true })
   account = next
 }
 
@@ -175,7 +211,7 @@ async function persistCounter(next: AccountData): Promise<void> {
   try {
     await saveAccount(next)
   } catch (err) {
-    console.warn('[auth] could not save the login attempts:', err instanceof Error ? err.message : err)
+    console.warn('[auth] could not save the login attempts:', fsErrorText(err))
   }
 }
 
@@ -197,7 +233,22 @@ async function requireDevice(reason: string): Promise<void> {
 
 /* ---------- Setup, unlock, lock ---------- */
 
+/** Moves whatever data is here aside (see quarantine.ts); the error says no more than the code and the system call. */
+async function setAside(what: string): Promise<string | null> {
+  epoch++
+  try {
+    return await quarantineData(paths, Date.now(), startupLog)
+  } catch (err) {
+    throw new AppError('auth.erase_failed', `Could not set the ${what} aside, so nothing was changed (${fsErrorText(err)}).`)
+  }
+}
+
+function requireNoImport(): void {
+  if (importing) throw new AppError('transfer.busy', 'An import is running. Wait until it is done.')
+}
+
 export async function setup(mode: AuthMode, password?: string): Promise<{ recoveryKey: string }> {
+  requireNoImport()
   if (account || loadError || accountExists()) throw new AppError('auth.exists', 'Kasboek is already set up.')
   if (mode === 'password' && !checkPassword(password ?? '').ok) throw new AppError('auth.weak_password', 'Choose a stronger password.')
   if (mode === 'device') {
@@ -205,10 +256,8 @@ export async function setup(mode: AuthMode, password?: string): Promise<{ recove
     await requireDevice('Set up Kasboek')
   }
   const legacyKey = await readLegacyDbKey()
-  if (!legacyKey && existsSync(paths.dbFile)) {
-    // A database without its account can't be opened by anyone: move it aside, don't delete it.
-    await rename(paths.dbFile, `${paths.dbFile}.orphaned-${Date.now()}`)
-  }
+  // A database or account copies without a readable account can't be opened by anyone: move them aside, don't delete or overwrite them.
+  if (!legacyKey) await setAside('old data')
   const created = await createAccount({ mode, password, dbKey: legacyKey ?? randomBytes(32).toString('hex') })
   await persist(created.account)
   openWith(created.master, created.vault)
@@ -272,21 +321,24 @@ export function closeForReplace(): void {
  * or Touch ID must confirm first; with no account, or one that can't be read, typing ERASE is all there is.
  */
 export async function erase(): Promise<void> {
+  requireNoImport()
   if (account?.mode === 'device') await requireDevice('Erase Kasboek')
   lock('user')
   try {
-    await quarantineData(paths, Date.now(), startupLog)
+    await setAside('data')
   } catch (err) {
     // quarantineData puts back what it moved; reading the account again makes memory match whatever is on disk.
-    await initSession().catch((e: unknown) => startupLog(`erase failed, and the data could not be read again: ${e instanceof Error ? e.message : String(e)}`))
-    throw new AppError('auth.erase_failed', `Could not set the data aside, so erasing was stopped: ${err instanceof Error ? err.message : String(err)}`)
+    await initSession().catch((e: unknown) => startupLog(`erase failed, and the data could not be read again (${fsErrorText(e)})`))
+    throw err
   }
   account = null
   loadError = null
+  restoredFrom = null
 }
 
 /** Brings back one erased copy, by the name from status().erased. It needs the original password or recovery key to open. */
 export async function restoreErasedData(name: string): Promise<void> {
+  requireNoImport()
   if (account || loadError || accountExists()) throw new AppError('auth.restore_blocked', 'Kasboek is already set up. Restoring erased data is only possible on the first screen.')
   try {
     await restoreErased(paths, name)
@@ -369,12 +421,41 @@ export async function totpDisable(code: string): Promise<void> {
   await persist(r.account)
 }
 
+/** Marks an import as running; the returned function ends it. Only one import runs at a time. */
+export function beginImport(): () => void {
+  requireNoImport()
+  importing = true
+  return () => {
+    importing = false
+  }
+}
+
+/**
+ * The last step before an import replaces the data, and synchronous on purpose: nothing can change between the check
+ * and the closing. Locked with an account that is fine is refused (the person has not logged in); the account may
+ * have become readable while the file was being checked. Returns whether Kasboek was unlocked.
+ */
+export function beginReplace(): { wasUnlocked: boolean } {
+  if (!open && account && !loadError) throw new AppError('auth.locked', 'Unlock Kasboek first.')
+  const wasUnlocked = open !== null
+  // Any read that is still running holds an answer from before the data is replaced.
+  epoch++
+  closeForReplace()
+  return { wasUnlocked }
+}
+
+/** Moves the old data aside before an import replaces it (see setAside). */
+export function setOldDataAside(): Promise<string | null> {
+  return setAside('old data')
+}
+
 /** Used by import: replaces the account and opens the imported database. */
 export async function adopt(next: AccountData, master: Buffer, vault: Vault, wasRecovery: boolean): Promise<void> {
+  epoch++
   if (open) closeForReplace()
   await persist(storeVault(next, master, vault))
   // Copies of the account that was replaced (damaged ones, leftovers) hold its sealed secrets: not kept.
-  await removeAccountSideFiles().catch((err: unknown) => startupLog(`import: could not remove old account copies: ${err instanceof Error ? err.message : String(err)}`))
+  await removeAccountSideFiles().catch((err: unknown) => startupLog(`import: could not remove old account copies (${fsErrorText(err)})`))
   loadError = null
   openWith(master, vault)
   recovered = wasRecovery && next.mode === 'password'

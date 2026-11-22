@@ -216,6 +216,7 @@ const desktopOps: OpTable = {
   },
 
   'auth.status': { mutates: false, assistant: false, handler: () => session.status() },
+  'auth.retry': { mutates: false, assistant: false, handler: () => session.retryRead() },
   'auth.setup': {
     mutates: true,
     assistant: false,

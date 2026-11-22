@@ -120,6 +120,8 @@ export const contract = {
 
   /* ----- Login ----- */
   'auth.status': { input: empty, output: out<AuthStatus>() },
+  /** Error screen, "Try again": reads the account file again (a plain status never does). */
+  'auth.retry': { input: empty, output: out<AuthStatus>() },
   'auth.setup': {
     input: z.discriminatedUnion('mode', [
       z.object({ mode: z.literal('password'), password }).strict(),
@@ -728,6 +730,7 @@ export const PUBLIC_OPS: readonly OpName[] = [
   'prefs.get',
   'prefs.update',
   'auth.status',
+  'auth.retry',
   'auth.setup',
   'sync.pickJoin',
   'sync.cancelJoin',

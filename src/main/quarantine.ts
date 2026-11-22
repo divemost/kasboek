@@ -6,8 +6,9 @@
  */
 import { existsSync } from 'node:fs'
 import { mkdir, readdir, rename, rm, rmdir } from 'node:fs/promises'
-import { basename, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { AppError } from '@core/errors'
+import { fsErrorText } from './fs-error'
 
 export interface DataLayout {
   dataDir: string
@@ -113,7 +114,7 @@ export async function quarantineData(l: DataLayout, now = Date.now(), log: (text
     }
   } catch (err) {
     for (const m of moved.reverse()) {
-      await rename(m.to, m.from).catch((e: unknown) => log(`erase rollback: could not move ${m.to} back to ${m.from}: ${e instanceof Error ? e.message : String(e)}`))
+      await rename(m.to, m.from).catch((e: unknown) => log(`erase rollback: could not move ${basename(m.from)} back (${fsErrorText(e)}); it stays in erased/${basename(dirname(m.to))}`))
     }
     // Only empty folders are removed here: anything that could not be moved back stays in the entry.
     await rmdir(dir).catch(() => undefined)

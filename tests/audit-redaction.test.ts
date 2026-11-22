@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { z } from 'zod'
 import { auditDetails, isRedacted, scrubAuditLog } from '@core/audit'
 import { openDatabase, snapshotEncrypted } from '@core/database'
@@ -74,5 +74,25 @@ describe('audit log redaction', () => {
     ])
     scrubAuditLog(reopened)
     expect(reopened.prepare('SELECT count(*) AS n FROM audit_log').get()).toEqual({ n: 3 })
+  })
+
+  it('opens the database anyway when the clean-up can’t write, and keeps the rows for the next unlock', () => {
+    const file = join(mkdtempSync(join(tmpdir(), 'kb-audit-busy-')), 'k.db')
+    const key = randomBytes(32).toString('hex')
+    const db = openDatabase(file, key)
+    db.prepare('INSERT INTO audit_log (actor, action, details) VALUES (?, ?, ?)').run('user', 'assistant.setKey', JSON.stringify({ apiKey: KEY }))
+    // Stands in for a busy or read-only database: every update is refused.
+    db.exec("CREATE TEMP TRIGGER refuse BEFORE UPDATE ON audit_log BEGIN SELECT RAISE(ABORT, 'database is locked'); END")
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    expect(() => scrubAuditLog(db)).not.toThrow()
+    expect(warn).toHaveBeenCalledTimes(1)
+    expect(warn.mock.calls[0]!.join(' ')).not.toContain(file)
+    db.exec('DROP TRIGGER refuse')
+    scrubAuditLog(db)
+    scrubAuditLog(db)
+    expect(db.prepare('SELECT details FROM audit_log').all()).toEqual([{ details: '{}' }])
+    expect(warn).toHaveBeenCalledTimes(1)
+    warn.mockRestore()
+    db.close()
   })
 })

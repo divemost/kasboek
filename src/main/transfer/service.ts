@@ -18,10 +18,11 @@ import { planRetention, timeFromName, type Tier } from '@core/backup-tiers'
 import type { BackupEntryInfo, BackupStatus, ImportReset, PickedTransfer } from '@shared/types'
 import { paths } from '../paths'
 import { startupLog } from '../graphics'
-import { quarantineData, restoreErased } from '../quarantine'
+import { fsErrorText } from '../fs-error'
+import { restoreErased } from '../quarantine'
 import { removeAccountSideFiles } from '../security/account-store'
 import { canUseDeviceMode } from '../security/device-mode'
-import { accountUnreadable, adopt, closeForReplace, db, initSession, isUnlocked, secrets } from '../session'
+import { adopt, beginImport, beginReplace, closeForReplace, db, initSession, isUnlocked, secrets, setOldDataAside } from '../session'
 
 const AUTO_FILE = new RegExp(`^kasboek-backup-[0-9_-]+\\.${TRANSFER_EXTENSION}$`)
 
@@ -196,18 +197,30 @@ async function putBack(name: string): Promise<void> {
     await removeAccountSideFiles(true)
     await restoreErased(paths, name)
   } catch (err) {
-    startupLog(`import failed and the old data could not be put back from erased/${name}: ${err instanceof Error ? err.message : String(err)}`)
+    startupLog(`import failed and the old data could not be put back from erased/${name} (${fsErrorText(err)})`)
   }
   await initSession().catch(() => undefined)
 }
 
-export async function importTransfer(input: {
+type ImportInput = {
   token: string
   password?: string
   code?: string
   recoveryKey?: string
   newPassword?: string
-}, opts: { joining?: boolean } = {}): Promise<ImportReset[]> {
+}
+
+/** Only one import runs at a time, and while it runs the session does not read the account again (see beginImport). */
+export async function importTransfer(input: ImportInput, opts: { joining?: boolean } = {}): Promise<ImportReset[]> {
+  const end = beginImport()
+  try {
+    return await runImport(input, opts)
+  } finally {
+    end()
+  }
+}
+
+async function runImport(input: ImportInput, opts: { joining?: boolean }): Promise<ImportReset[]> {
   const file = picked.get(input.token)
   if (!file) throw new AppError('transfer.expired', 'Choose the file again.')
   const contents = await openTransfer(
@@ -260,20 +273,30 @@ export async function importTransfer(input: {
   }
 
   // Replacing data on this computer: keep a safety copy of what's here first.
+  let safetyCopy = false
   if (isUnlocked()) {
     mkdirSync(paths.safetyDir, { recursive: true })
     await writeTransfer(join(paths.safetyDir, `before-import-${stamp()}.${TRANSFER_EXTENSION}`), 'backup')
+    safetyCopy = true
   }
-  closeForReplace()
-  // An account file that can't be opened: the old files go to erased/<time> first (as Erase does), so nothing is lost.
-  // This is only reached once the imported file has opened and its database checked out.
+  // Decided in one synchronous step: locked with an account that opens is refused, even when it could not be read a moment ago.
+  let wasUnlocked: boolean
+  try {
+    wasUnlocked = beginReplace().wasUnlocked
+  } catch (err) {
+    await rm(staged, { force: true })
+    throw err
+  }
+  // Not unlocked (or unlocked only since the safety copy was due): whatever is here (an account that can't be opened, a database without account, copies of the account) goes to
+  // erased/<time> first, as Erase does, so nothing is lost and nothing is overwritten. Only reached once the imported file has
+  // opened and its database checked out.
   let aside: string | null = null
-  if (accountUnreadable()) {
+  if (!wasUnlocked || !safetyCopy) {
     try {
-      aside = await quarantineData(paths, Date.now(), startupLog)
+      aside = await setOldDataAside()
     } catch (err) {
       await rm(staged, { force: true })
-      throw new AppError('auth.erase_failed', `Could not set the old data aside, so nothing was imported: ${err instanceof Error ? err.message : String(err)}`)
+      throw err
     }
   }
   try {

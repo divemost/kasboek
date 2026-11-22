@@ -58,7 +58,7 @@ export function Lock() {
           error={status.error}
           more={more}
           onToggleMore={() => setMore((m) => !m)}
-          onRetry={() => window.location.reload()}
+          onRetry={() => run(call('auth.retry'))}
           onImport={() => setView('import')}
           onShowFolder={() => void call('auth.showDataFolder').then((r) => r.ok || toast(t('auth.open.folderFailed'), 'error'), (e) => toast(errText(e), 'error'))}
           onCopy={() =>
@@ -82,6 +82,11 @@ export function Lock() {
     <AuthLayout>
       {view === 'unlock' && (
         <AuthCard title={t('auth.unlockTitle')} body={device ? t('auth.unlockDeviceBody', { name: deviceName }) : undefined}>
+          {status.restoredFrom && (
+            <p className="mb-4 text-[13px] text-warning" role="status">
+              {t('auth.restoredBackup', { date: formatDate(status.restoredFrom, fmt) })}
+            </p>
+          )}
           <form
             className="flex flex-col gap-4"
             onSubmit={(e) => {

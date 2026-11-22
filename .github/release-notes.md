@@ -6,6 +6,7 @@ Everything in 0.22.2 is included.
 
 **Privacy**
 - API keys you entered for the assistant were also written to Kasboek's encrypted activity log; they are removed now and are no longer logged. The same goes for sync passwords. The activity log also no longer keeps account numbers, rule patterns or the text of assistant chats and memory notes.
+If you shared old exports, backups or sync snapshots with others, consider changing your assistant API key and sync password.
 
 **Fixes**
 - Kasboek now says clearly why it cannot open its data (the Windows or system key cannot be read, the account file is empty or damaged, or the file is busy) and shows the technical details on request. From that screen you can import a backup or export without erasing anything, because the unreadable files are kept in an "erased" folder, and you can open the data folder or copy a short diagnostic text with file names and sizes only. Saving the account file is now safer, with a flushed write and an automatic safety copy that Kasboek uses on its own if the file ever turns up empty or cut off.
