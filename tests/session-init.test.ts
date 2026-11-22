@@ -12,6 +12,9 @@ vi.mock('../src/main/security/device-auth', () => ({ deviceAuthKind: async () =>
 vi.mock('../src/main/security/device-mode', () => ({ keyIsOsProtected: async () => false }))
 vi.mock('../src/main/security/account-store', () => ({
   accountExists: () => false,
+  AccountReadError: class extends Error {},
+  describeReadFailure: async () => 'account read failed',
+  removeAccountSideFiles: vi.fn(),
   keyProtection: async () => 'file',
   loadAccount: mocks.loadAccount,
   readLegacyDbKey: async () => null,

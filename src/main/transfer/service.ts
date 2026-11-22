@@ -17,8 +17,11 @@ import { encodeTransfer, openTransfer, readTransferHeader, TRANSFER_EXTENSION } 
 import { planRetention, timeFromName, type Tier } from '@core/backup-tiers'
 import type { BackupEntryInfo, BackupStatus, ImportReset, PickedTransfer } from '@shared/types'
 import { paths } from '../paths'
+import { startupLog } from '../graphics'
+import { quarantineData, restoreErased } from '../quarantine'
+import { removeAccountSideFiles } from '../security/account-store'
 import { canUseDeviceMode } from '../security/device-mode'
-import { adopt, closeForReplace, db, isUnlocked, secrets } from '../session'
+import { accountUnreadable, adopt, closeForReplace, db, initSession, isUnlocked, secrets } from '../session'
 
 const AUTO_FILE = new RegExp(`^kasboek-backup-[0-9_-]+\\.${TRANSFER_EXTENSION}$`)
 
@@ -184,6 +187,20 @@ export async function describeTransfer(file: string): Promise<PickedTransfer> {
   }
 }
 
+/** The import failed after the old files were set aside: remove what the import wrote and bring the old files back. */
+async function putBack(name: string): Promise<void> {
+  try {
+    closeForReplace()
+    await rm(paths.accountFile, { force: true })
+    await rm(paths.dbFile, { force: true })
+    await removeAccountSideFiles(true)
+    await restoreErased(paths, name)
+  } catch (err) {
+    startupLog(`import failed and the old data could not be put back from erased/${name}: ${err instanceof Error ? err.message : String(err)}`)
+  }
+  await initSession().catch(() => undefined)
+}
+
 export async function importTransfer(input: {
   token: string
   password?: string
@@ -248,8 +265,24 @@ export async function importTransfer(input: {
     await writeTransfer(join(paths.safetyDir, `before-import-${stamp()}.${TRANSFER_EXTENSION}`), 'backup')
   }
   closeForReplace()
-  await rename(staged, paths.dbFile)
-  await adopt(next, master, vault, usedRecovery)
+  // An account file that can't be opened: the old files go to erased/<time> first (as Erase does), so nothing is lost.
+  // This is only reached once the imported file has opened and its database checked out.
+  let aside: string | null = null
+  if (accountUnreadable()) {
+    try {
+      aside = await quarantineData(paths, Date.now(), startupLog)
+    } catch (err) {
+      await rm(staged, { force: true })
+      throw new AppError('auth.erase_failed', `Could not set the old data aside, so nothing was imported: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+  try {
+    await rename(staged, paths.dbFile)
+    await adopt(next, master, vault, usedRecovery)
+  } catch (err) {
+    if (aside) await putBack(aside)
+    throw err
+  }
   picked.delete(input.token)
   // The staged database has sync off; the place file (URL, user name) and outbox next to it are stale now.
   if (!opts.joining && reset.includes('sync')) (await import('../sync/service')).removeSyncLeftovers()

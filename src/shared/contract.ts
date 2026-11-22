@@ -132,6 +132,10 @@ export const contract = {
     output: out<AuthStatus>()
   },
   'auth.forgetComputer': { input: empty, output: out<AuthStatus>() },
+  /** Error screen: opens the data folder in the file manager. Takes no path; the main process knows it. */
+  'auth.showDataFolder': { input: empty, output: out<{ ok: boolean }>() },
+  /** Error screen: a short text about the data files (names, sizes, dates; never contents) to copy for support. */
+  'auth.diagnostics': { input: empty, output: out<{ text: string }>() },
   'auth.unlockRecovery': { input: z.object({ recoveryKey: z.string().min(10).max(80) }).strict(), output: out<AuthStatus>() },
   'auth.lock': { input: empty, output: out<AuthStatus>() },
   /** Moves the data, safety backups included, into quarantine for 30 days (restorable with the password or recovery key) and starts fresh. */
@@ -730,6 +734,8 @@ export const PUBLIC_OPS: readonly OpName[] = [
   'auth.unlock',
   'auth.unlockRecovery',
   'auth.erase',
+  'auth.showDataFolder',
+  'auth.diagnostics',
   'auth.restoreErased',
   'transfer.pick',
   'transfer.import'

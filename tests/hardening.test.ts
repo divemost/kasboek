@@ -259,6 +259,25 @@ describe('erase quarantine', () => {
     expect(await listErased(l)).toEqual([])
   })
 
+  it('moves the safety copy, damaged copies and write leftovers of the account along, so no sealed secrets stay behind', async () => {
+    const l = layout()
+    fill(l)
+    for (const n of ['account.json.bak', 'account.json.damaged-1700000000000', 'account.json.tmp']) writeFileSync(join(l.dataDir, n), n)
+    writeFileSync(join(l.dataDir, 'prefs.json'), '{}')
+    const name = await quarantineData(l, T1)
+    expect(readdirSync(l.dataDir).sort()).toEqual(['erased', 'prefs.json'])
+    const entry = join(l.dataDir, 'erased', name!)
+    expect(readdirSync(entry).sort()).toEqual(['account.json', 'account.json.bak', 'account.json.damaged-1700000000000', 'account.json.tmp', 'kasboek.db', 'safety-backups'])
+
+    await restoreErased(l, name!)
+    expect(readFileSync(join(l.dataDir, 'account.json.bak'), 'utf8')).toBe('account.json.bak')
+    expect(readFileSync(join(l.dataDir, 'account.json.damaged-1700000000000'), 'utf8')).toBe('account.json.damaged-1700000000000')
+    // Purging removes them with the rest of the entry.
+    await quarantineData(l, T1)
+    await purgeErased(l, { now: T1 + 31 * DAY })
+    expect(readdirSync(join(l.dataDir, 'erased'))).toEqual([])
+  })
+
   it('restores the copy that was chosen, not the newest, and leaves the others alone', async () => {
     const l = layout()
     fill(l, '-old')
@@ -455,7 +474,10 @@ vi.mock('../src/main/security/account-store', () => ({
   accountExists: () => existsSync(join(mocks.dataDir, 'account.json')),
   keyProtection: mocks.keyProtection,
   loadAccount: async () => (existsSync(join(mocks.dataDir, 'account.json')) ? JSON.parse(readFileSync(join(mocks.dataDir, 'account.json'), 'utf8')) : null),
+  AccountReadError: class extends Error {},
+  describeReadFailure: async () => 'account read failed',
   readLegacyDbKey: async () => null,
+  removeAccountSideFiles: async () => undefined,
   removeLegacyKeystore: async () => undefined,
   saveAccount: mocks.saveAccount
 }))
@@ -710,6 +732,51 @@ describe('session', () => {
       expect(getSecret(d, 'anthropicApiKey')).toBeNull()
       expect(getSecret(d, 'syncKey')).toBeNull()
       expect((d.prepare('SELECT COUNT(*) AS n FROM memories').get() as { n: number }).n).toBe(0)
+    })
+
+    it('replaces an account file that can’t be read only once the imported file opens, keeping the old files aside', async () => {
+      await session.setup('password', PASSWORD)
+      const file = await exportFile()
+      session.lock('user', true)
+      const dir = mocks.dataDir
+      const oldDb = readFileSync(join(dir, 'kasboek.db'))
+      writeFileSync(join(dir, 'account.json'), '')
+      writeFileSync(join(dir, 'account.json.bak'), 'old sealed copy')
+      writeFileSync(join(dir, 'account.json.damaged-1'), 'old damaged')
+      await session.initSession()
+      expect((await session.status()).error).not.toBeNull()
+      const picked = await transfer.describeTransfer(file)
+
+      // A wrong password changes nothing: the unreadable files stay where they are.
+      await expect(transfer.importTransfer({ token: picked.token, password: 'not the password 1!' })).rejects.toMatchObject({ code: 'transfer.wrong_credentials' })
+      expect(existsSync(join(dir, 'erased'))).toBe(false)
+      expect(readFileSync(join(dir, 'account.json'), 'utf8')).toBe('')
+
+      await transfer.importTransfer({ token: picked.token, password: PASSWORD })
+      expect(session.isUnlocked()).toBe(true)
+      expect((await session.status()).error).toBeNull()
+      const [entry] = readdirSync(join(dir, 'erased'))
+      const kept = readdirSync(join(dir, 'erased', entry!)).sort()
+      expect(kept).toEqual(['account.json', 'account.json.bak', 'account.json.damaged-1', 'kasboek.db'])
+      expect(readFileSync(join(dir, 'erased', entry!, 'kasboek.db')).equals(oldDb)).toBe(true)
+      expect(readFileSync(join(dir, 'erased', entry!, 'account.json.bak'), 'utf8')).toBe('old sealed copy')
+      expect(existsSync(join(dir, 'account.json.damaged-1'))).toBe(false)
+    })
+
+    it('puts the old files back when the import fails after they were set aside', async () => {
+      await session.setup('password', PASSWORD)
+      const file = await exportFile()
+      session.lock('user', true)
+      const dir = mocks.dataDir
+      writeFileSync(join(dir, 'account.json'), '')
+      await session.initSession()
+      const picked = await transfer.describeTransfer(file)
+      mocks.saveAccount.mockRejectedValue(new Error('disk full'))
+      await expect(transfer.importTransfer({ token: picked.token, password: PASSWORD })).rejects.toThrow('disk full')
+      expect(readFileSync(join(dir, 'account.json'), 'utf8')).toBe('')
+      expect(existsSync(join(dir, 'kasboek.db'))).toBe(true)
+      expect(readdirSync(join(dir, 'erased'))).toEqual([])
+      expect((await session.status()).error).not.toBeNull()
     })
 
     it('never switches the assistant on: off here stays off after restoring a file made while it was on', async () => {

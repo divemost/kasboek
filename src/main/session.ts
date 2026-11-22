@@ -34,7 +34,7 @@ import type { AuthStatus, ErasedCopy } from '@shared/types'
 import { startupLog } from './graphics'
 import { paths } from './paths'
 import { getPrefs } from './prefs'
-import { accountExists, keyProtection, loadAccount, readLegacyDbKey, removeLegacyKeystore, saveAccount } from './security/account-store'
+import { accountExists, AccountReadError, describeReadFailure, keyProtection, loadAccount, readLegacyDbKey, removeAccountSideFiles, removeLegacyKeystore, saveAccount, type SealType } from './security/account-store'
 import { deviceAuthKind, peekDeviceAuthKind, releaseDeviceCheck, verifyDeviceUser } from './security/device-auth'
 import { keyIsOsProtected } from './security/device-mode'
 import { listErased, purgeErased, quarantineData, restoreErased } from './quarantine'
@@ -89,7 +89,10 @@ async function readAccount(): Promise<void> {
     account = await loadAccount()
     loadError = null
   } catch (err) {
-    loadError = err instanceof AppError ? err : new AppError('auth.corrupt', String(err))
+    // Never the raw error as the message: the page shows its own text per code, and this only under "Details".
+    const failure = err instanceof AppError ? err : new AccountReadError('auth.unreadable', `unexpected error (${err instanceof Error ? err.name : 'unknown'})`, 'unknown')
+    loadError = failure
+    startupLog(await describeReadFailure(err).catch(() => `account read failed: ${failure.code}`))
   }
   // Erased copies are kept for 30 days, then removed.
   await purgeErased(paths).catch((err: unknown) => console.warn('[auth] could not clean up erased data:', err))
@@ -107,6 +110,16 @@ export function startDeferredChecks(): void {
 export function db(): Db {
   if (!open) throw new AppError('auth.locked', 'Kasboek is locked.')
   return open.db
+}
+
+/** The account file exists but can't be opened: the first screen is the error card, and a backup may replace the data. */
+export function accountUnreadable(): boolean {
+  return !open && loadError !== null
+}
+
+/** What the diagnostic text says about the failed read; null when there is none. */
+export function readFailure(): { code: string; seal: SealType } | null {
+  return loadError ? { code: loadError.code, seal: loadError instanceof AccountReadError ? loadError.seal : 'unknown' } : null
 }
 
 export function isUnlocked(): boolean {
@@ -360,6 +373,8 @@ export async function totpDisable(code: string): Promise<void> {
 export async function adopt(next: AccountData, master: Buffer, vault: Vault, wasRecovery: boolean): Promise<void> {
   if (open) closeForReplace()
   await persist(storeVault(next, master, vault))
+  // Copies of the account that was replaced (damaged ones, leftovers) hold its sealed secrets: not kept.
+  await removeAccountSideFiles().catch((err: unknown) => startupLog(`import: could not remove old account copies: ${err instanceof Error ? err.message : String(err)}`))
   loadError = null
   openWith(master, vault)
   recovered = wasRecovery && next.mode === 'password'
