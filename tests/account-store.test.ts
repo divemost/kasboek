@@ -11,7 +11,9 @@ const mocks = vi.hoisted(() => ({
   failRead: null as string | null,
   steps: [] as string[],
   opened: [] as { name: string; flags: unknown; mode: unknown }[],
-  failWrite: null as string | null
+  failWrite: null as string | null,
+  /** Makes opening or flushing the data folder fail with this error code. */
+  failFolder: null as { at: 'open' | 'sync'; code: string } | null
 }))
 
 vi.mock('electron', () => ({
@@ -41,10 +43,13 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       const name = String(path).split(/[\\/]/).pop()?.replace(/\.tmp-[0-9a-f-]{36}$/, '.tmp')
       mocks.opened.push({ name: name!, flags: rest[0], mode: rest[1] })
       if (mocks.failWrite && name === mocks.failWrite) throw Object.assign(new Error(`EIO: cannot write '${String(path)}'`), { code: 'EIO', syscall: 'open' })
+      const isFolder = String(path) === mocks.dataDir
+      if (isFolder && mocks.failFolder?.at === 'open') throw Object.assign(new Error(`${mocks.failFolder.code}: cannot open '${String(path)}'`), { code: mocks.failFolder.code, syscall: 'open' })
       const handle = await (real.open as (...a: unknown[]) => Promise<import('node:fs/promises').FileHandle>)(path, ...rest)
       const sync = handle.sync.bind(handle)
       handle.sync = async () => {
         mocks.steps.push(`fsync ${name}`)
+        if (isFolder && mocks.failFolder?.at === 'sync') throw Object.assign(new Error(`${mocks.failFolder.code}: cannot flush`), { code: mocks.failFolder.code, syscall: 'fsync' })
         return sync()
       }
       return handle
@@ -72,6 +77,7 @@ describe('account file', () => {
     mocks.steps.length = 0
     mocks.opened.length = 0
     mocks.failWrite = null
+    mocks.failFolder = null
     mocks.decrypt.mockReset().mockImplementation(async (b) => ({ result: b.toString().replace(/^sealed:/, '') }))
     store = await import('../src/main/security/account-store')
   })
@@ -103,13 +109,35 @@ describe('account file', () => {
   it('writes the temporary file, flushes it, renames it, then flushes the folder', async () => {
     await store.saveAccount(account('one'))
     const dirStep = `fsync ${mocks.dataDir.split(/[\\/]/).pop()}`
-    // Windows can't open a folder to flush it: there the last step does not exist (and the code accepts that).
-    const flushesFolder = process.platform !== 'win32'
-    const main = flushesFolder ? mocks.steps.slice(0, mocks.steps.indexOf(dirStep) + 1) : mocks.steps.slice(0, mocks.steps.indexOf('fsync account.json.bak.tmp'))
-    expect(main).toEqual(['fsync account.json.tmp', 'rename account.json.tmp -> account.json', ...(flushesFolder ? [dirStep] : [])])
+    // Every platform flushes the folder: Windows opens it too (only the flush itself may be refused, see below).
+    const main = mocks.steps.slice(0, mocks.steps.indexOf(dirStep) + 1)
+    expect(main).toEqual(['fsync account.json.tmp', 'rename account.json.tmp -> account.json', dirStep])
     // The safety copy is written the same way, after the account itself.
     expect(mocks.steps.indexOf('fsync account.json.bak.tmp')).toBeGreaterThan(main.length - 1)
     expect(mocks.steps).toContain('rename account.json.bak.tmp -> account.json.bak')
+  })
+
+  describe('when the data folder can’t be flushed', () => {
+    const logged = async (): Promise<string> => vi.mocked((await import('../src/main/graphics')).startupLog).mock.calls.map((c) => String(c[0])).join('\n')
+
+    it.each(['open', 'sync'] as const)('accepts EPERM, EISDIR, EINVAL, ENOTSUP and EACCES at %s without a word', async (at) => {
+      for (const code of ['EPERM', 'EISDIR', 'EINVAL', 'ENOTSUP', 'EACCES']) {
+        mocks.failFolder = { at, code }
+        await store.saveAccount(account(code))
+        expect(tagOf(await store.loadAccount())).toBe(code)
+      }
+      expect(await logged()).not.toContain('could not flush the data folder')
+    })
+
+    it.each(['open', 'sync'] as const)('only logs any other error code at %s, and the save still succeeds', async (at) => {
+      mocks.failFolder = { at, code: 'EIO' }
+      await store.saveAccount(account('one'))
+      expect(tagOf(await store.loadAccount())).toBe('one')
+      expect(readFileSync(file('account.json.bak'), 'utf8')).toBe(readFileSync(file('account.json'), 'utf8'))
+      const text = await logged()
+      expect(text).toContain('account: could not flush the data folder (EIO)')
+      expect(text).not.toContain(mocks.dataDir)
+    })
   })
 
   it('recovers an empty account file from the safety copy and keeps the damaged file', async () => {
