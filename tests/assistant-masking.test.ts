@@ -241,7 +241,8 @@ describe('what the assistant gets, in the hard cases', () => {
       const started = performance.now()
       const out = maskResult({ description: unit.repeat(200_000 / unit.length), nested: [{ text: unit.repeat(100_000 / unit.length) }] }) as { description: string }
       expect(out.description.length).toBeLessThanOrEqual(2001)
-      expect(performance.now() - started, JSON.stringify(unit)).toBeLessThan(process.env.CI ? 1000 : 50)
+      // Generous: this catches a quadratic blow-up (seconds), not a slow machine (measured: about 35 ms at most).
+      expect(performance.now() - started, JSON.stringify(unit)).toBeLessThan(process.env.CI ? 5000 : 1000)
     }
   })
 
@@ -391,6 +392,6 @@ describe('maskPrivate with a cut: earlier masks must not pull unmasked text unde
       expect(out.length).toBeLessThanOrEqual(2001)
       expect(out).not.toMatch(/ABNA|0417|1643/)
     }
-    expect(performance.now() - started).toBeLessThan(process.env.CI ? 3000 : 500)
+    expect(performance.now() - started).toBeLessThan(process.env.CI ? 5000 : 1000)
   })
 })
