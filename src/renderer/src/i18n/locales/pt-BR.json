@@ -361,7 +361,7 @@
     "downloadingShort": "Baixando… {{percent}} %",
     "current": "Você tem a versão {{version}}.",
     "downloading": "Baixando… {{percent}} % de {{size}}",
-    "readyRestart": "Baixado e verificado. O Kasboek fecha, mostra o progresso da instalação em uma janela própria e volta a abrir. Demora cerca de um minuto.",
+    "readyRestart": "Baixado e verificado. O Kasboek fecha, mostra o progresso da instalação em uma janela própria e volta a abrir. Costuma levar um ou dois minutos, mais em um computador lento.",
     "preparing": "Preparando a atualização… Primeiro uma cópia de segurança dos seus dados.",
     "installing": "Instalando… O Kasboek fecha, mostra o progresso e volta a abrir em instantes.",
     "helper": {
@@ -370,7 +370,11 @@
       "starting": "Iniciando o Kasboek…",
       "failed": "Não foi possível instalar a atualização. O Kasboek vai iniciar de novo.",
       "cancelled": "A atualização foi cancelada. O Kasboek vai iniciar de novo.",
-      "notClosed": "O Kasboek não fechou a tempo, então a atualização não foi instalada. O Kasboek vai abrir de novo."
+      "notClosed": "O Kasboek não fechou a tempo, então a atualização não foi instalada. O Kasboek vai abrir de novo.",
+      "disconnecting": "Desconectando o Claude do Kasboek…",
+      "stillWorking": "O Windows Installer ainda está trabalhando (pode levar vários minutos).",
+      "noProgress": "Nada de novo há um minuto. Se um aplicativo do Claude estiver aberto, fechá-lo pode ajudar.",
+      "slow": "Demorando? Baixe-o pela página da versão:"
     },
     "ready": {
       "dmg": "Baixado e verificado. O Kasboek abre a imagem de disco; arraste o Kasboek para Aplicações e substitua a versão antiga.",
@@ -381,7 +385,11 @@
     "download": "Baixar",
     "downloadSize": "Baixar ({{size}})",
     "checking": "Procurando…",
-    "upToDate": "Você tem a versão mais recente (verificado {{when}})."
+    "upToDate": "Você tem a versão mais recente (verificado {{when}}).",
+    "retry": "Tentar de novo",
+    "stalled": "Sem dados há 30 s… tentando de novo",
+    "retrying": "Conexão interrompida… tentando de novo",
+    "bridgesNote": "Os aplicativos do Claude conectados ao Kasboek são desconectados durante a atualização. Se algum não se reconectar depois, reinicie-o."
   },
   "welcome": {
     "aiBody": "O assistente responde a perguntas sobre o seu dinheiro e pode fazer alterações por você, que aguardam a sua aprovação. Escolha um fornecedor de IA, ou pule esta etapa e configure-o mais tarde nas Configurações.",

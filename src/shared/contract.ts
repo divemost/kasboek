@@ -116,6 +116,8 @@ export const contract = {
   'update.status': { input: empty, output: out<UpdateStatus>() },
   'update.check': { input: empty, output: out<UpdateStatus>() },
   'update.download': { input: empty, output: out<UpdateStatus>() },
+  /** Stops a running download and removes what was downloaded. */
+  'update.cancel': { input: empty, output: out<UpdateStatus>() },
   /** Backs up, then installs (Windows, AppImage: Kasboek closes and opens again) or opens the file. */
   'update.install': { input: empty, output: out<UpdateStatus>() },
   'update.openPage': { input: empty, output: out<{ ok: true }>() },

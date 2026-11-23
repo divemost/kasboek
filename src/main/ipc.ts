@@ -148,6 +148,7 @@ const desktopOps: OpTable = {
   'update.status': { mutates: false, assistant: false, handler: async () => (await updates.get()).updateStatus() },
   'update.check': { mutates: false, assistant: false, handler: async () => (await updates.get()).checkForUpdate() },
   'update.download': { mutates: false, assistant: false, handler: async () => (await updates.get()).downloadUpdate() },
+  'update.cancel': { mutates: false, assistant: false, handler: async () => (await updates.get()).cancelDownload() },
   'update.install': { mutates: false, assistant: false, handler: async () => (await updates.get()).installUpdate() },
   'update.openPage': {
     mutates: false,

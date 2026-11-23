@@ -56,7 +56,7 @@ export interface UpdatePlan {
   result: string
   toVersion: string
   theme: 'light' | 'dark'
-  texts: { waiting: string; installing: string; starting: string; failed: string; cancelled: string; notClosed: string }
+  texts: { waiting: string; installing: string; starting: string; failed: string; cancelled: string; notClosed: string; disconnecting: string; stillWorking: string; noProgress: string; slow: string }
 }
 
 export interface UpdatePlanInput extends Omit<UpdatePlan, 'v'> {
@@ -129,8 +129,12 @@ export function failedUpdateMessage(pendingVersion: string, current: string, res
   return msiOutcomeMessage(typeof outcome === 'string' && OUTCOMES.includes(outcome) ? (outcome as MsiOutcome) : 'failed', pendingVersion)
 }
 
-/** How long a note about an update that is being installed counts as recent: Windows Installer may still be busy. */
-export const PENDING_GRACE_MS = 5 * 60 * 1000
+/**
+ * How long a note about an update that is being installed counts as recent: Windows Installer may
+ * still be busy. Longer than the helper's own limit for the installation (12 minutes), and the same
+ * as `updateGrace` in tools/kasboek-mcp/launch.go, which keeps Claude's bridge from starting Kasboek meanwhile.
+ */
+export const PENDING_GRACE_MS = 20 * 60 * 1000
 
 /**
  * After a restart: is the update that the note (`pending.json`) talks about probably still being
@@ -143,6 +147,17 @@ export function updateMayStillBeRunning(pendingVersion: string, current: string,
   const at = typeof pendingAt === 'string' ? Date.parse(pendingAt) : Number.NaN
   const age = now - at
   return Number.isFinite(age) && age >= 0 && age < PENDING_GRACE_MS
+}
+
+/**
+ * AppImage update: a small shell command that waits until this process has ended and only then starts
+ * the new AppImage, so the new instance doesn't find the old one still holding the single-instance
+ * lock. The process id and the path are arguments (`$1`, `$2`), never part of the script. It gives up
+ * waiting after about a minute (300 x 0.2 s) and starts anyway.
+ */
+export function relaunchAfterExit(pid: number, appImage: string): { command: string; args: string[] } {
+  const script = 'i=0; while kill -0 "$1" 2>/dev/null && [ "$i" -lt 300 ]; do i=$((i+1)); sleep 0.2; done; exec "$2"'
+  return { command: '/bin/sh', args: ['-c', script, 'kasboek-relaunch', String(Math.trunc(pid)), appImage] }
 }
 
 /** The update helper writes `started` once its plan is checked; Kasboek only quits after seeing it. */

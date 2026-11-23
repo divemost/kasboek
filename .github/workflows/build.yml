@@ -102,6 +102,24 @@ jobs:
             release/*/*.AppImage
             release/*/*.deb
           if-no-files-found: error
+      # A real upgrade on a Windows runner: the previous release's MSI is installed, a kasboek-mcp
+      # bridge is started from its folder, then the MSI just built is installed over it silently
+      # (what the updater does). Only in test builds, after the installers are uploaded, and nothing
+      # in the release job waits for it, so it can't hold up or break a release. x64 only: the
+      # runner is x64 and a 64-bit ARM Windows runner is not assumed.
+      - name: Windows upgrade smoke test (MSI upgrade while a Claude bridge runs)
+        if: runner.os == 'Windows' && !inputs.release && !startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = node -p "require('./package.json').version"
+          $old = Join-Path $env:RUNNER_TEMP 'old'
+          New-Item -ItemType Directory -Force -Path $old | Out-Null
+          gh release download --repo $env:GITHUB_REPOSITORY --pattern 'Kasboek-*-win-x64.msi' --dir $old
+          $oldMsi = (Get-ChildItem $old -Filter '*.msi' | Select-Object -First 1).FullName
+          $newMsi = (Get-ChildItem "release/$version" -Filter '*-win-x64.msi' | Select-Object -First 1).FullName
+          ./scripts/msi-upgrade-smoke.ps1 -OldMsi $oldMsi -NewMsi $newMsi -NewVersion $version
 
   release:
     # Publishing only from main or a version tag, never from another branch, and never after a

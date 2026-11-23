@@ -1324,7 +1324,7 @@
     "title": "Kasboek {{version}} is beschikbaar",
     "current": "Je hebt {{version}}.",
     "downloading": "Downloaden… {{percent}}% van {{size}}",
-    "readyRestart": "Gedownload en gecontroleerd. Kasboek sluit, toont de voortgang van de installatie in een eigen venster en opent opnieuw. Dat duurt ongeveer een minuut.",
+    "readyRestart": "Gedownload en gecontroleerd. Kasboek sluit, toont de voortgang van de installatie in een eigen venster en opent opnieuw. Dat duurt meestal een minuut of twee, op een trage computer langer.",
     "ready": {
       "dmg": "Gedownload en gecontroleerd. Kasboek opent de schijfkopie; sleep Kasboek naar Apps en vervang de oude.",
       "deb": "Gedownload en gecontroleerd. Kasboek opent het pakket in je software-installatie."
@@ -1337,7 +1337,11 @@
       "starting": "Kasboek wordt gestart…",
       "failed": "De update kon niet worden geïnstalleerd. Kasboek wordt opnieuw gestart.",
       "cancelled": "De update is geannuleerd. Kasboek wordt opnieuw gestart.",
-      "notClosed": "Kasboek is niet op tijd gesloten, dus de update is niet geïnstalleerd. Kasboek wordt opnieuw geopend."
+      "notClosed": "Kasboek is niet op tijd gesloten, dus de update is niet geïnstalleerd. Kasboek wordt opnieuw geopend.",
+      "disconnecting": "Claude wordt losgekoppeld van Kasboek…",
+      "stillWorking": "Windows Installer is nog bezig (dit kan enkele minuten duren).",
+      "noProgress": "Al een minuut niets nieuws. Als er een Claude-app open is, kan sluiten helpen.",
+      "slow": "Duurt het lang? Download het via de releasepagina:"
     },
     "opened": {
       "dmg": "Sleep Kasboek naar Apps en kies Vervang. Sluit Kasboek daarna af en open het opnieuw.",
@@ -1357,7 +1361,12 @@
     "checking": "Zoeken…",
     "upToDate": "Je hebt de nieuwste versie (gecontroleerd {{when}}).",
     "availableHint": "Versie {{version}} is beschikbaar: gebruik de knop bovenaan.",
-    "checkNow": "Nu zoeken"
+    "checkNow": "Nu zoeken",
+    "cancel": "Annuleren",
+    "retry": "Opnieuw proberen",
+    "stalled": "Al 30 s geen gegevens… opnieuw proberen",
+    "retrying": "Verbinding onderbroken… opnieuw proberen",
+    "bridgesNote": "Claude-apps die met Kasboek verbonden zijn, worden tijdens de update losgekoppeld. Start een Claude-app opnieuw als hij daarna niet weer verbindt."
   },
   "welcome": {
     "aiTitle": "De assistent instellen",

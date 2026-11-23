@@ -95,8 +95,8 @@ func fileIdentity(path string) (volume uint32, index uint64, err error) {
 		return 0, 0, err
 	}
 	// No access rights are asked for (only the file's attributes), and everything may be shared,
-	// so this works on a program that is running.
-	h, err := syscall.CreateFile(p, 0, syscall.FILE_SHARE_READ|syscall.FILE_SHARE_WRITE|syscall.FILE_SHARE_DELETE, nil, syscall.OPEN_EXISTING, syscall.FILE_ATTRIBUTE_NORMAL, 0)
+	// so this works on a program that is running. The backup flag lets it open folders too.
+	h, err := syscall.CreateFile(p, 0, syscall.FILE_SHARE_READ|syscall.FILE_SHARE_WRITE|syscall.FILE_SHARE_DELETE, nil, syscall.OPEN_EXISTING, syscall.FILE_ATTRIBUTE_NORMAL|syscall.FILE_FLAG_BACKUP_SEMANTICS, 0)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -138,29 +138,87 @@ func (w winPlatform) runningImage(pid uint32) string {
 	return img
 }
 
-func (w winPlatform) othersRunning(exePath string) (bool, error) {
+// eachProcess calls f for every process in a snapshot of the running programs, until f returns
+// true. It returns an error only when the snapshot itself can't be made or read.
+func eachProcess(f func(pid uint32, name string) (stop bool)) error {
 	snap, err := syscall.CreateToolhelp32Snapshot(th32csSnapProcess, 0)
 	if err != nil {
-		return false, err
+		return err
 	}
 	defer syscall.CloseHandle(snap)
 	var e syscall.ProcessEntry32
 	e.Size = uint32(unsafe.Sizeof(e))
 	if err := syscall.Process32First(snap, &e); err != nil {
-		return false, err
+		return err
 	}
-	self := uint32(os.Getpid())
 	for {
-		// The name is only a quick filter; the file decides.
-		if e.ProcessID != self && strings.EqualFold(syscall.UTF16ToString(e.ExeFile[:]), filepath.Base(exePath)) {
-			if img := w.runningImage(e.ProcessID); img != "" && sameFile(img, exePath) {
-				return true, nil
-			}
+		if f(e.ProcessID, syscall.UTF16ToString(e.ExeFile[:])) {
+			return nil
 		}
 		if err := syscall.Process32Next(snap, &e); err != nil {
-			return false, nil // no more processes
+			return nil // no more processes
 		}
 	}
+}
+
+func (w winPlatform) othersRunning(exePath string) (bool, error) {
+	self := uint32(os.Getpid())
+	found := false
+	err := eachProcess(func(pid uint32, name string) bool {
+		// The name is only a quick filter; the file decides.
+		if pid != self && strings.EqualFold(name, filepath.Base(exePath)) {
+			if img := w.runningImage(pid); img != "" && sameFile(img, exePath) {
+				found = true
+			}
+		}
+		return found
+	})
+	return found, err
+}
+
+// bridgesRunning lists the kasboek-mcp programs, other than this one, that run from a file inside dir.
+func (w winPlatform) bridgesRunning(dir string) ([]bridgeProc, error) {
+	self := uint32(os.Getpid())
+	var out []bridgeProc
+	err := eachProcess(func(pid uint32, name string) bool {
+		if pid != self && isBridgeName(name) {
+			if img := w.runningImage(pid); img != "" && pathInside(img, dir, sameFile) {
+				out = append(out, bridgeProc{pid: int(pid), image: img})
+			}
+		}
+		return false
+	})
+	return out, err
+}
+
+const (
+	processTerminate = 0x0001
+	bridgeEndWait    = 5 * time.Second
+)
+
+// endBridges ends the programs (TerminateProcess; a bridge holds nothing that needs closing) and
+// waits for each to be gone. A process is only ended when it still runs the same program file as
+// when it was listed, so a reused process id is left alone.
+func (w winPlatform) endBridges(procs []bridgeProc) error {
+	var errs []error
+	for _, b := range procs {
+		h, err := syscall.OpenProcess(processTerminate|processSynchronize|processQueryLimitedInfo, false, uint32(b.pid))
+		if err != nil {
+			errs = append(errs, fmt.Errorf("process %d: %w", b.pid, err))
+			continue
+		}
+		if img, err := w.imagePath(procHandle(h)); err != nil || !strings.EqualFold(img, b.image) {
+			_ = syscall.CloseHandle(h)
+			continue
+		}
+		if err := syscall.TerminateProcess(h, 1); err != nil {
+			errs = append(errs, fmt.Errorf("process %d: %w", b.pid, err))
+		} else if gone, _ := w.waitExit(procHandle(h), bridgeEndWait); !gone {
+			errs = append(errs, fmt.Errorf("process %d did not end", b.pid))
+		}
+		_ = syscall.CloseHandle(h)
+	}
+	return errors.Join(errs...)
 }
 
 // lockAndHash opens the file for reading and allows others only to read it (FILE_SHARE_READ, not
@@ -236,4 +294,11 @@ func (winPlatform) start(exe string, args []string) error {
 
 func applyUpdate(path string) error {
 	return applyWith(path, newWinPlatform(), realTiming, startWindow)
+}
+
+// closeBridgesFlag is --close-bridges <folder>, run by the installer before it checks which files
+// are in use: end the bridges that run from the install folder. It never fails the install.
+func closeBridgesFlag(dir string) {
+	t := realTiming
+	closeBridgesIn(newWinPlatform(), dir, t, nil)
 }

@@ -15,6 +15,7 @@ type step int
 
 const (
 	stepWaiting step = iota
+	stepDisconnecting
 	stepInstalling
 	stepStarting
 	stepFailed
@@ -30,6 +31,18 @@ const (
 	// The window has this long to show up, else the update runs with Windows Installer's own dialog.
 	windowStartTimeout = 2 * time.Second
 	shineCycle         = 1300 * time.Millisecond
+
+	// Windows Installer can take minutes. The curve above only fits a normal install: after
+	// movingAfter the bar stops claiming a share and just moves, and the window says so. After
+	// noProgressAfter without anything new in the install log it adds a hint, and after slowAfter
+	// it points to the release page.
+	movingAfter     = 45 * time.Second
+	noProgressAfter = 60 * time.Second
+	slowAfter       = 3 * time.Minute
+	movingCycle     = 1800 * time.Millisecond
+	movingShare     = 0.35 // the moving piece's share of the bar
+	// releaseURL is where the person can get the installer by hand.
+	releaseURL = "https://github.com/divemost/kasboek/releases/latest"
 )
 
 // progressAt is how far the bar is in a step, `elapsed` after the step began. It is honest about
@@ -37,7 +50,7 @@ const (
 // starting 1. A failed step has no curve of its own (see uiModel).
 func progressAt(s step, elapsed time.Duration) float64 {
 	switch s {
-	case stepWaiting:
+	case stepWaiting, stepDisconnecting:
 		return waitingBar
 	case stepInstalling:
 		if elapsed < 0 {
@@ -68,6 +81,82 @@ type uiModel struct {
 	text   string
 	since  time.Time
 	frozen float64 // the bar when the update failed
+	// The install log: when it last changed, and the Windows Installer action it names.
+	lastLog time.Time
+	action  string
+}
+
+// withLog records that the install log moved on.
+func (m uiModel) withLog(action string, now time.Time) uiModel {
+	m.lastLog = now
+	if action != "" {
+		m.action = action
+	}
+	return m
+}
+
+// view is what the window draws at `now`.
+type view struct {
+	progress float64
+	moving   bool   // the bar only moves, it shows no share
+	text     string // the main line
+	detail   string // time elapsed and Windows Installer's action
+	hint     string // nothing new in the log for a while
+	slow     string // a long wait: the release page
+	url      string
+}
+
+// elapsedText is a duration as m:ss (h:mm:ss from an hour).
+func elapsedText(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+	s := int(d.Seconds())
+	if s >= 3600 {
+		return fmt.Sprintf("%d:%02d:%02d", s/3600, s%3600/60, s%60)
+	}
+	return fmt.Sprintf("%d:%02d", s/60, s%60)
+}
+
+// viewAt is the window's content: the step's text and bar, and while Windows Installer runs long
+// the honest version of it (see movingAfter).
+func (m uiModel) viewAt(now time.Time, pl updatePlan) view {
+	v := view{progress: m.progress(now), text: m.text}
+	if m.step != stepInstalling {
+		return v
+	}
+	elapsed := now.Sub(m.since)
+	if elapsed >= movingAfter {
+		v.moving = true
+		v.text = pl.text(textStillWorking)
+		v.detail = elapsedText(elapsed)
+		if m.action != "" {
+			v.detail += " · " + m.action
+		}
+	}
+	quiet := m.lastLog
+	if quiet.Before(m.since) {
+		quiet = m.since
+	}
+	if now.Sub(quiet) >= noProgressAfter {
+		v.hint = pl.text(textNoProgress)
+	}
+	if elapsed >= slowAfter {
+		v.slow = pl.text(textSlow)
+		v.url = releaseURL
+	}
+	return v
+}
+
+// movingPos is where the moving piece is on the bar, 0 (left end) to 1 (right end), back and forth
+// with a smooth turn at both ends.
+func movingPos(elapsed time.Duration) float64 {
+	phase := float64(elapsed%movingCycle) / float64(movingCycle)
+	if phase < 0 {
+		phase += 1
+	}
+	tri := 1 - math.Abs(2*phase-1) // 0 -> 1 -> 0
+	return tri * tri * (3 - 2*tri)
 }
 
 func (m uiModel) progress(now time.Time) float64 {
@@ -131,6 +220,10 @@ const (
 	textFailed
 	textCancelled
 	textNotClosed
+	textDisconnecting
+	textStillWorking
+	textNoProgress
+	textSlow
 )
 
 // Used when the plan has no text (an empty one must not leave the window blank).
@@ -141,6 +234,11 @@ var fallbackTexts = map[textKey]string{
 	textFailed:     "The update could not be installed. Kasboek is starting again.",
 	textCancelled:  "The update was cancelled. Kasboek is starting again.",
 	textNotClosed:  "Kasboek did not close in time, so the update was not installed. Kasboek is opening again.",
+
+	textDisconnecting: "Disconnecting Claude from Kasboek…",
+	textStillWorking:  "Windows Installer is still working (this can take several minutes).",
+	textNoProgress:    "Nothing new for a minute. If a Claude app is open, closing it may help.",
+	textSlow:          "Taking long? Download it from the release page:",
 }
 
 // text is the plan's text for a step, or the English one when the plan has none. {{version}} (or
@@ -160,6 +258,14 @@ func (pl updatePlan) text(k textKey) string {
 		raw = pl.Texts.Cancelled
 	case textNotClosed:
 		raw = pl.Texts.NotClosed
+	case textDisconnecting:
+		raw = pl.Texts.Disconnecting
+	case textStillWorking:
+		raw = pl.Texts.StillWorking
+	case textNoProgress:
+		raw = pl.Texts.NoProgress
+	case textSlow:
+		raw = pl.Texts.Slow
 	}
 	if strings.TrimSpace(raw) == "" {
 		raw = fallbackTexts[k]
@@ -180,11 +286,13 @@ func guard(name string, f func()) {
 	f()
 }
 
-func (g guardedUI) waiting()        { guard("waiting", g.inner.waiting) }
-func (g guardedUI) installing()     { guard("installing", g.inner.installing) }
-func (g guardedUI) starting()       { guard("starting", g.inner.starting) }
-func (g guardedUI) failed(m string) { guard("failed", func() { g.inner.failed(m) }) }
-func (g guardedUI) close()          { guard("close", g.inner.close) }
+func (g guardedUI) waiting()             { guard("waiting", g.inner.waiting) }
+func (g guardedUI) disconnecting()       { guard("disconnecting", g.inner.disconnecting) }
+func (g guardedUI) installing()          { guard("installing", g.inner.installing) }
+func (g guardedUI) starting()            { guard("starting", g.inner.starting) }
+func (g guardedUI) failed(m string)      { guard("failed", func() { g.inner.failed(m) }) }
+func (g guardedUI) logActivity(a string) { guard("logActivity", func() { g.inner.logActivity(a) }) }
+func (g guardedUI) close()               { guard("close", g.inner.close) }
 
 // uiStarter shows the update window, or says why it can't.
 type uiStarter func(pl updatePlan) (ui, error)

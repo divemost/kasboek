@@ -87,6 +87,8 @@ module.exports = async function msiProjectCreated(projectFile) {
   //     "Also delete my Kasboek data" was ticked (REMOVE_DATA=1); uninstalling from Windows
   //     Settings shows no dialogs, so there the data is always kept. Not on upgrades.
   wxs = replaceOnce(wxs, /<File Name="kasboek-mcp(\.exe)?"/, (m) => m.replace('<File ', '<File Id="mcpHelper" '), 'the kasboek-mcp helper file')
+  const helperSource = (wxs.match(/<File Id="mcpHelper" Name="kasboek-mcp(?:\.exe)?" Source="([^"]+)"/) || [])[1]
+  if (!helperSource) throw new Error("msi-project: couldn't find the source of the kasboek-mcp helper file")
   const dataDir = '&quot;[AppDataFolder]Kasboek&quot;'
   wxs = replaceOnce(
     wxs,
@@ -94,12 +96,23 @@ module.exports = async function msiProjectCreated(projectFile) {
     `$1
     <CustomAction Id="KasboekCleanup" FileKey="mcpHelper" ExeCommand="--uninstall-cleanup --data-dir ${dataDir}" Execute="deferred" Impersonate="yes" Return="ignore"/>
     <CustomAction Id="KasboekCleanupAll" FileKey="mcpHelper" ExeCommand="--uninstall-cleanup --remove-data --data-dir ${dataDir}" Execute="deferred" Impersonate="yes" Return="ignore"/>
+    <Binary Id="KasboekMcpBin" SourceFile="${helperSource}"/>
+    <CustomAction Id="KasboekCloseBridges" BinaryKey="KasboekMcpBin" ExeCommand="--close-bridges &quot;[APPLICATIONFOLDER].&quot;" Execute="immediate" Impersonate="yes" Return="ignore"/>
     <InstallExecuteSequence>
+      <Custom Action="KasboekCloseBridges" Before="InstallValidate">NOT REMOVE</Custom>
       <Custom Action="KasboekCleanup" Before="RemoveFiles">(REMOVE = "ALL") AND (NOT UPGRADINGPRODUCTCODE) AND (REMOVE_DATA &lt;&gt; "1")</Custom>
       <Custom Action="KasboekCleanupAll" Before="RemoveFiles">(REMOVE = "ALL") AND (NOT UPGRADINGPRODUCTCODE) AND (REMOVE_DATA = "1")</Custom>
     </InstallExecuteSequence>`,
     'MediaTemplate (cleanup)'
   )
+
+  // 3c. Before the installer checks which files are in use (InstallValidate), the new helper, run
+  //     from the Binary table (the installed copy is the one being replaced), ends the kasboek-mcp
+  //     programs that Claude apps keep running from the install folder. They would otherwise make
+  //     a silent update (/qn, which can't ask) wait. It is in InstallExecuteSequence, which runs in
+  //     every UI mode (InstallUISequence is skipped by /qn), Return="ignore" so it can never fail
+  //     an install, and the path ends in "." because "[APPLICATIONFOLDER]" ends in a backslash,
+  //     which would swallow the closing quote.
 
   // 4. The "Shortcuts" page, between choosing where to install and "Ready to install".
   wxs = wxs.replace('Value="VerifyReadyDlg" Order="6">WixAppFolder = "WixPerUserFolder"', 'Value="ShortcutsDlg" Order="6">WixAppFolder = "WixPerUserFolder"')

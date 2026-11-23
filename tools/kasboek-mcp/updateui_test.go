@@ -14,11 +14,13 @@ func startNoWindow(updatePlan) (ui, error) { return &fakeUI{}, nil }
 // panicUI is a window that panics in every call.
 type panicUI struct{}
 
-func (panicUI) waiting()      { panic("waiting") }
-func (panicUI) installing()   { panic("installing") }
-func (panicUI) starting()     { panic("starting") }
-func (panicUI) failed(string) { panic("failed") }
-func (panicUI) close()        { panic("close") }
+func (panicUI) waiting()           { panic("waiting") }
+func (panicUI) disconnecting()     { panic("disconnecting") }
+func (panicUI) logActivity(string) { panic("logActivity") }
+func (panicUI) installing()        { panic("installing") }
+func (panicUI) starting()          { panic("starting") }
+func (panicUI) failed(string)      { panic("failed") }
+func (panicUI) close()             { panic("close") }
 
 func TestProgressCurve(t *testing.T) {
 	if progressAt(stepWaiting, time.Hour) != 0.1 || progressAt(stepStarting, 0) != 1 {

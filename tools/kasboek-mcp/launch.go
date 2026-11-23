@@ -6,7 +6,31 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"time"
 )
+
+// updateGrace is how long an update counts as running after its `started` (or `apply.json`) file
+// was written. It matches PENDING_GRACE_MS in src/core/update.ts: longer than the helper's own
+// deadline for Windows Installer.
+const updateGrace = 20 * time.Minute
+
+// updateInProgress: is Kasboek's update helper installing right now? Then Kasboek must not be
+// started (a running Kasboek.exe blocks the install, and the helper opens it when it is done).
+// A finished update (result.json) or a file older than updateGrace is a leftover of one that is over.
+func updateInProgress(dataDir string, now time.Time) bool {
+	dir := filepath.Join(dataDir, "updates")
+	if _, err := os.Stat(filepath.Join(dir, "result.json")); err == nil {
+		return false
+	}
+	for _, name := range []string{startedFile, "apply.json"} {
+		if st, err := os.Stat(filepath.Join(dir, name)); err == nil && !st.IsDir() {
+			if age := now.Sub(st.ModTime()); age < updateGrace {
+				return true
+			}
+		}
+	}
+	return false
+}
 
 // appCommand is how to start Kasboek: from app.json, which the app writes at every start, or else
 // the Kasboek program installed next to this helper.
@@ -45,6 +69,9 @@ func appCommand(dataDir string) (string, []string) {
 // unlock it from there. If Kasboek already runs, the second copy hands over and quits at once.
 func startApp(dataDir string) bool {
 	if os.Getenv("KASBOEK_MCP_NO_LAUNCH") == "1" {
+		return false
+	}
+	if updateInProgress(dataDir, time.Now()) {
 		return false
 	}
 	exe, args := appCommand(dataDir)

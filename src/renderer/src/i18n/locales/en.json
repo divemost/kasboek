@@ -1324,7 +1324,7 @@
     "title": "Kasboek {{version}} is available",
     "current": "You have {{version}}.",
     "downloading": "Downloading… {{percent}}% of {{size}}",
-    "readyRestart": "Downloaded and checked. Kasboek closes, shows the installation progress in its own window and opens again. This takes about a minute.",
+    "readyRestart": "Downloaded and checked. Kasboek closes, shows the installation progress in its own window and opens again. This usually takes a minute or two, longer on a slow computer.",
     "ready": {
       "dmg": "Downloaded and checked. Kasboek opens the disk image; drag Kasboek to Applications and replace the old one.",
       "deb": "Downloaded and checked. Kasboek opens the package in your software installer."
@@ -1337,7 +1337,11 @@
       "starting": "Starting Kasboek…",
       "failed": "The update could not be installed. Kasboek is starting again.",
       "cancelled": "The update was cancelled. Kasboek is starting again.",
-      "notClosed": "Kasboek did not close in time, so the update was not installed. Kasboek is opening again."
+      "notClosed": "Kasboek did not close in time, so the update was not installed. Kasboek is opening again.",
+      "disconnecting": "Disconnecting Claude from Kasboek…",
+      "stillWorking": "Windows Installer is still working (this can take several minutes).",
+      "noProgress": "Nothing new for a minute. If a Claude app is open, closing it may help.",
+      "slow": "Taking long? Download it from the release page:"
     },
     "opened": {
       "dmg": "Drag Kasboek to Applications and choose Replace. Then quit Kasboek and open it again.",
@@ -1357,7 +1361,12 @@
     "checking": "Checking…",
     "upToDate": "You have the latest version (checked {{when}}).",
     "availableHint": "Version {{version}} is available: use the button at the top.",
-    "checkNow": "Check now"
+    "checkNow": "Check now",
+    "cancel": "Cancel",
+    "retry": "Try again",
+    "stalled": "No data for 30 s… retrying",
+    "retrying": "Connection interrupted… retrying",
+    "bridgesNote": "Claude apps that are connected to Kasboek are disconnected during the update. If one does not reconnect afterwards, restart it."
   },
   "welcome": {
     "aiTitle": "Set up the assistant",

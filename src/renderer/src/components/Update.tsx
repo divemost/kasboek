@@ -74,9 +74,11 @@ function UpdateModal({ status, open, onClose }: { status: UpdateStatus; open: bo
               <div className="h-full rounded-full bg-accent transition-[width] duration-300" style={{ width: `${percent}%` }} />
             </div>
             <p className="mt-1.5 text-xs text-muted">{t('update.downloading', { percent, size: mb(status.sizeBytes) })}</p>
+            {status.downloadNote && <p role="status" className="mt-1 text-xs text-warning">{t(`update.${status.downloadNote}`)}</p>}
           </div>
         )}
         {status.state === 'ready' && <p className="text-muted">{restart ? t('update.readyRestart') : t(`update.ready.${status.kind}`)}</p>}
+        {(status.state === 'ready' || status.state === 'preparing') && status.kind === 'msi' && <p className="text-muted">{t('update.bridgesNote')}</p>}
         {status.state === 'preparing' && <p className="flex items-center gap-2 font-medium"><RefreshCw size={14} className="animate-spin text-accent" />{t('update.preparing')}</p>}
         {status.state === 'installing' && <p className="flex items-center gap-2 font-medium"><RefreshCw size={14} className="animate-spin text-accent" />{t('update.installing')}</p>}
         {status.state === 'opened' && <p className="font-medium">{t(`update.opened.${status.kind}`)}</p>}
@@ -89,10 +91,11 @@ function UpdateModal({ status, open, onClose }: { status: UpdateStatus; open: bo
             <ExternalLink size={13} /> {t('update.releasePage')}
           </button>
           <div className="flex gap-2">
+            {status.state === 'downloading' && <Button onClick={() => act(call('update.cancel'))}>{t('update.cancel')}</Button>}
             {!busy && <Button onClick={onClose}>{t('update.later')}</Button>}
             {status.kind && (status.state === 'available' || status.state === 'error') && (
-              <Button variant="primary" icon={<ArrowDownToLine size={14} />} onClick={() => act(call('update.download'))}>
-                {status.sizeBytes ? t('update.downloadSize', { size: mb(status.sizeBytes) }) : t('update.download')}
+              <Button variant="primary" icon={status.state === 'error' ? <RefreshCw size={14} /> : <ArrowDownToLine size={14} />} onClick={() => act(call('update.download'))}>
+                {status.state === 'error' ? t('update.retry') : status.sizeBytes ? t('update.downloadSize', { size: mb(status.sizeBytes) }) : t('update.download')}
               </Button>
             )}
             {(status.state === 'ready' || status.state === 'preparing') && (

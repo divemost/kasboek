@@ -1324,7 +1324,7 @@
     "title": "Kasboek {{version}} ist verfügbar",
     "current": "Du hast {{version}}.",
     "downloading": "Wird geladen… {{percent}} % von {{size}}",
-    "readyRestart": "Geladen und geprüft. Kasboek schließt sich, zeigt den Fortschritt der Installation in einem eigenen Fenster und öffnet sich wieder. Das dauert etwa eine Minute.",
+    "readyRestart": "Geladen und geprüft. Kasboek schließt sich, zeigt den Fortschritt der Installation in einem eigenen Fenster und öffnet sich wieder. Das dauert meist ein bis zwei Minuten, auf einem langsamen Computer länger.",
     "ready": {
       "dmg": "Geladen und geprüft. Kasboek öffnet das Disk-Image; zieh Kasboek in „Programme“ und ersetze die alte Version.",
       "deb": "Geladen und geprüft. Kasboek öffnet das Paket in deiner Softwareinstallation."
@@ -1337,7 +1337,11 @@
       "starting": "Kasboek wird gestartet…",
       "failed": "Das Update konnte nicht installiert werden. Kasboek startet wieder.",
       "cancelled": "Das Update wurde abgebrochen. Kasboek startet wieder.",
-      "notClosed": "Kasboek wurde nicht rechtzeitig geschlossen, daher wurde das Update nicht installiert. Kasboek wird wieder geöffnet."
+      "notClosed": "Kasboek wurde nicht rechtzeitig geschlossen, daher wurde das Update nicht installiert. Kasboek wird wieder geöffnet.",
+      "disconnecting": "Claude wird von Kasboek getrennt…",
+      "stillWorking": "Windows Installer arbeitet noch (das kann einige Minuten dauern).",
+      "noProgress": "Seit einer Minute nichts Neues. Wenn eine Claude-App geöffnet ist, kann Schließen helfen.",
+      "slow": "Dauert es lange? Lade es von der Release-Seite herunter:"
     },
     "opened": {
       "dmg": "Zieh Kasboek in „Programme“ und wähle „Ersetzen“. Beende Kasboek dann und öffne es wieder.",
@@ -1357,7 +1361,12 @@
     "checking": "Wird gesucht…",
     "upToDate": "Du hast die neueste Version (geprüft {{when}}).",
     "availableHint": "Version {{version}} ist verfügbar: nutze die Schaltfläche oben.",
-    "checkNow": "Jetzt suchen"
+    "checkNow": "Jetzt suchen",
+    "cancel": "Abbrechen",
+    "retry": "Erneut versuchen",
+    "stalled": "Seit 30 s keine Daten… neuer Versuch",
+    "retrying": "Verbindung unterbrochen… neuer Versuch",
+    "bridgesNote": "Claude-Apps, die mit Kasboek verbunden sind, werden während des Updates getrennt. Starte eine Claude-App neu, falls sie sich danach nicht wieder verbindet."
   },
   "welcome": {
     "aiTitle": "Den Assistenten einrichten",

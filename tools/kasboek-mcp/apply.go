@@ -46,6 +46,12 @@ type updatePlan struct {
 		Failed     string `json:"failed"`
 		Cancelled  string `json:"cancelled"`
 		NotClosed  string `json:"notClosed"`
+		// Disconnecting: Claude apps are being disconnected. StillWorking, NoProgress and Slow are
+		// shown while Windows Installer takes long (see viewAt in updateui.go).
+		Disconnecting string `json:"disconnecting"`
+		StillWorking  string `json:"stillWorking"`
+		NoProgress    string `json:"noProgress"`
+		Slow          string `json:"slow"`
 	} `json:"texts"`
 }
 
@@ -61,19 +67,24 @@ type updateResult struct {
 // ui shows the person what is going on: the progress window (updatewin_windows.go), or nothing.
 type ui interface {
 	waiting()
+	disconnecting()
 	installing()
 	starting()
 	failed(message string)
+	// logActivity: the install log moved on; action is the last Windows Installer action in it ("" if none yet).
+	logActivity(action string)
 	close()
 }
 
 type noUI struct{}
 
-func (noUI) waiting()      {}
-func (noUI) installing()   {}
-func (noUI) starting()     {}
-func (noUI) failed(string) {}
-func (noUI) close()        {}
+func (noUI) waiting()           {}
+func (noUI) disconnecting()     {}
+func (noUI) installing()        {}
+func (noUI) starting()          {}
+func (noUI) failed(string)      {}
+func (noUI) logActivity(string) {}
+func (noUI) close()             {}
 
 // procHandle is an open process (a Windows handle).
 type procHandle uintptr
@@ -87,6 +98,10 @@ type platform interface {
 	imagePath(h procHandle) (string, error)
 	// othersRunning: is any process running from this program file (the same file, however the path is spelled)?
 	othersRunning(exePath string) (bool, error)
+	// bridgesRunning: the kasboek-mcp programs (not this process) whose program file is inside dir.
+	bridgesRunning(dir string) ([]bridgeProc, error)
+	// endBridges ends these programs and waits a short time for them to be gone.
+	endBridges(procs []bridgeProc) error
 	// lockAndHash reads the file and returns its SHA-256. Until release is called nobody can change
 	// or delete it, so what was checked is what gets installed. release is nil when err is not.
 	lockAndHash(path string) (sum string, release func(), err error)
@@ -208,10 +223,28 @@ type timing struct {
 	snapshotTries int
 	// msiexecTimeout: how long one run of Windows Installer may take.
 	msiexecTimeout time.Duration
-	sleep          func(time.Duration)
+	// installDeadline: how long the installation may take in all, retries (1618) included. A run is
+	// never given more than what is left, and no retry starts when too little is left.
+	installDeadline time.Duration
+	// logPoll: how often the install log is looked at for the window (0: never).
+	logPoll time.Duration
+	sleep   func(time.Duration)
+	// now is the clock (nil: the real one); tests move it.
+	now func() time.Time
 }
 
-var realTiming = timing{exitWait: 120 * time.Second, othersWait: 30 * time.Second, othersPoll: 500 * time.Millisecond, busyRetries: 3, busyWait: 10 * time.Second, snapshotTries: 3, msiexecTimeout: 15 * time.Minute, sleep: time.Sleep}
+func (t timing) clock() time.Time {
+	if t.now != nil {
+		return t.now()
+	}
+	return time.Now()
+}
+
+// minRetryTime: a busy installer (1618) is only tried again when this much time (plus the pause)
+// is left of installDeadline.
+const minRetryTime = time.Minute
+
+var realTiming = timing{exitWait: 120 * time.Second, othersWait: 30 * time.Second, othersPoll: 500 * time.Millisecond, busyRetries: 3, busyWait: 10 * time.Second, snapshotTries: 3, msiexecTimeout: 10 * time.Minute, installDeadline: 12 * time.Minute, logPoll: 2 * time.Second, sleep: time.Sleep}
 
 func sha256Hex(r io.Reader) (string, error) {
 	h := sha256.New()
@@ -272,6 +305,31 @@ func waitForKasboek(p platform, pl updatePlan, t timing, proc kasboekProc) bool 
 	}
 }
 
+// runInstaller runs Windows Installer, and again while it says another installation is busy (1618),
+// but all within t.installDeadline. While it runs the install log is watched for the window.
+func runInstaller(p platform, u ui, pl updatePlan, t timing, passive bool) (int, error) {
+	stop := watchInstallLog(pl.Log, t.logPoll, u.logActivity)
+	defer stop()
+	deadline := t.clock().Add(t.installDeadline)
+	run := func() (int, error) {
+		limit := t.msiexecTimeout
+		if left := deadline.Sub(t.clock()); left < limit {
+			limit = max(left, time.Second)
+		}
+		return p.runMsiexec(msiexecArgs(pl.MSI, pl.Log, passive), limit)
+	}
+	code, err := run()
+	for retry := 0; err == nil && code == 1618 && retry < t.busyRetries; retry++ {
+		if left := deadline.Sub(t.clock()); left < t.busyWait+minRetryTime {
+			logf("another installation is busy and only %v is left of the time for the update: not trying again", left.Round(time.Second))
+			break
+		}
+		t.sleep(t.busyWait)
+		code, err = run()
+	}
+	return code, err
+}
+
 func runUpdate(p platform, u ui, pl updatePlan, t timing, passive bool, proc kasboekProc) error {
 	defer u.close()
 	u.waiting()
@@ -282,6 +340,9 @@ func runUpdate(p platform, u ui, pl updatePlan, t timing, passive bool, proc kas
 		u.failed(pl.text(textNotClosed))
 		return errors.Join(errors.New("kasboek did not close"), writeResult(pl, -1, "not_closed"), relaunch(p, u, pl))
 	}
+	// Claude apps keep kasboek-mcp running from the install folder, which Windows Installer can't
+	// replace and a silent install can't ask about: end those first.
+	closeBridgesIn(p, filepath.Dir(pl.Exe), t, func([]bridgeProc) { u.disconnecting() })
 	sum, release, err := p.lockAndHash(pl.MSI)
 	if err != nil || !strings.EqualFold(sum, pl.SHA256) {
 		if err == nil {
@@ -292,11 +353,7 @@ func runUpdate(p platform, u ui, pl updatePlan, t timing, passive bool, proc kas
 	}
 	// The file stays locked until Windows Installer is done: no swap between check and install.
 	u.installing()
-	code, err := p.runMsiexec(msiexecArgs(pl.MSI, pl.Log, passive), t.msiexecTimeout)
-	for retry := 0; err == nil && code == 1618 && retry < t.busyRetries; retry++ {
-		t.sleep(t.busyWait)
-		code, err = p.runMsiexec(msiexecArgs(pl.MSI, pl.Log, passive), t.msiexecTimeout)
-	}
+	code, err := runInstaller(p, u, pl, t, passive)
 	release()
 	if err != nil {
 		code = -1

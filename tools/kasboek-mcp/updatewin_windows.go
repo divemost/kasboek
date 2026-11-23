@@ -78,6 +78,7 @@ var (
 	procSetBkMode              = dllGdi32.NewProc("SetBkMode")
 	procGetDeviceCaps          = dllGdi32.NewProc("GetDeviceCaps")
 	procExtractIconEx          = dllShell32.NewProc("ExtractIconExW")
+	procShellExecute           = dllShell32.NewProc("ShellExecuteW")
 	procGetModuleHandle        = dllKernel32.NewProc("GetModuleHandleW")
 )
 
@@ -86,6 +87,7 @@ const (
 	wmPaint      = 0x000F
 	wmClose      = 0x0010
 	wmEraseBkgnd = 0x0014
+	wmLButtonUp  = 0x0202
 	wmSetIcon    = 0x0080
 	wmTimer      = 0x0113
 	wmApp        = 0x8000
@@ -126,16 +128,23 @@ const (
 
 	className = "KasboekUpdateWindow"
 
-	// CSS pixels, from resources/splash.html: a 380x240 window with its content centred: a 36 px
-	// title row, 18 px gap, 6 px bar, 18 px gap, then the 13 px text (96 px in all, so it starts at 72).
-	cssWidth, cssHeight = 380, 240
-	cssTitleTop         = 72
+	// CSS pixels, from resources/splash.html (a 380x240 window: a 36 px title row, 18 px gap, 6 px
+	// bar, 18 px gap, then the 13 px text). This window is taller, because while Windows Installer
+	// takes long it shows more lines under the bar: the text (two lines), the time and action, a
+	// hint (two lines), and the release page line with its address.
+	cssWidth, cssHeight = 380, 300
+	cssTitleTop         = 56
 	cssTitleHeight      = 36
 	cssBarWidth         = 240
 	cssBarHeight        = 6
-	cssBarTop           = 126
-	cssTextTop          = 150
-	cssTextHeight       = 60
+	cssBarTop           = 110
+	cssTextTop          = 134
+	cssTextHeight       = 34
+	cssDetailTop        = 170
+	cssHintTop          = 190
+	cssHintHeight       = 34
+	cssSlowTop          = 228
+	cssLineHeight       = 18
 	cssTextMargin       = 20
 	cssTitleFont        = 28
 	cssTextFont         = 13
@@ -203,6 +212,7 @@ type window struct {
 	abandoned bool    // startWindow gave up waiting: the thread must not leave a window behind
 
 	// Only the window thread uses these.
+	urlRect             rect // where the release page address was drawn (window thread only)
 	born                time.Time
 	animate             bool
 	scale               float64
@@ -460,6 +470,9 @@ func windowProc(hwnd, msg, wParam, lParam uintptr) (result uintptr) {
 			w.tick()
 			procInvalidateRect.Call(hwnd, 0, 0)
 			return 0
+		case wmLButtonUp:
+			w.click(int32(int16(lParam&0xFFFF)), int32(int16((lParam>>16)&0xFFFF)))
+			return 0
 		case wmCloseWindow:
 			procDestroyWindow.Call(hwnd)
 			return 0
@@ -471,6 +484,15 @@ func windowProc(hwnd, msg, wParam, lParam uintptr) (result uintptr) {
 	}
 	result, _, _ = procDefWindowProc.Call(hwnd, msg, wParam, lParam)
 	return result
+}
+
+// click opens the release page when the address under the bar was clicked.
+func (w *window) click(x, y int32) {
+	r := w.urlRect
+	if r.right <= r.left || x < r.left || x >= r.right || y < r.top || y >= r.bottom {
+		return
+	}
+	procShellExecute.Call(0, uintptr(unsafe.Pointer(utf16Ptr("open"))), uintptr(unsafe.Pointer(utf16Ptr(releaseURL))), 0, 0, swShowNormal)
 }
 
 func (w *window) snapshot() uiModel {
@@ -550,6 +572,8 @@ func (w *window) draw(dc uintptr, m uiModel) {
 
 	w.text(dc, w.titleFont, p.text, "Kasboek", rect{0, w.px(cssTitleTop), w.width, w.px(cssTitleTop + cssTitleHeight)}, dtCenter|dtVCenter|dtSingleLine|dtNoPrefix)
 
+	now := time.Now()
+	v := m.viewAt(now, w.pl)
 	failed := m.step == stepFailed
 	fillColor, textColor := p.accent, p.muted
 	if failed {
@@ -558,15 +582,39 @@ func (w *window) draw(dc uintptr, m uiModel) {
 	barX, barY := (w.width-w.px(cssBarWidth))/2, w.px(cssBarTop)
 	barW, barH := w.px(cssBarWidth), w.px(cssBarHeight)
 	w.roundBar(dc, barX, barY, barW, barH, p.track)
-	share := math.Max(minFillShare, math.Min(1, w.shown))
-	fillW := max(int32(math.Round(float64(barW)*share)), barH)
-	w.roundBar(dc, barX, barY, fillW, barH, fillColor)
-	if w.animate && !failed {
-		w.shine(dc, barX, barY, fillW, barH, fillColor)
+	if v.moving && w.animate {
+		// Windows Installer takes long: no share is claimed, a piece of the bar moves back and forth.
+		pieceW := int32(math.Round(float64(barW) * movingShare))
+		x := barX + int32(math.Round(movingPos(now.Sub(m.since))*float64(barW-pieceW)))
+		w.roundBar(dc, x, barY, pieceW, barH, fillColor)
+	} else {
+		share := math.Max(minFillShare, math.Min(1, w.shown))
+		fillW := max(int32(math.Round(float64(barW)*share)), barH)
+		w.roundBar(dc, barX, barY, fillW, barH, fillColor)
+		if w.animate && !failed {
+			w.shine(dc, barX, barY, fillW, barH, fillColor)
+		}
 	}
 
 	margin := w.px(cssTextMargin)
-	w.text(dc, w.stepFont, textColor, m.text, rect{margin, w.px(cssTextTop), w.width - margin, w.px(cssTextTop + cssTextHeight)}, dtCenter|dtWordBreak|dtNoPrefix)
+	line := func(top, height int, c colorRef, s string) rect {
+		r := rect{margin, w.px(float64(top)), w.width - margin, w.px(float64(top + height))}
+		w.text(dc, w.stepFont, c, s, r, dtCenter|dtWordBreak|dtNoPrefix)
+		return r
+	}
+	line(cssTextTop, cssTextHeight, textColor, v.text)
+	w.urlRect = rect{}
+	if v.detail != "" {
+		line(cssDetailTop, cssLineHeight, textColor, v.detail)
+	}
+	if v.hint != "" {
+		line(cssHintTop, cssHintHeight, textColor, v.hint)
+	}
+	if v.slow != "" {
+		line(cssSlowTop, cssLineHeight, textColor, v.slow)
+		// The address is drawn as a link: click it to open the release page.
+		w.urlRect = line(cssSlowTop+cssLineHeight, cssLineHeight, p.accent, v.url)
+	}
 }
 
 // shine is the light band that sweeps over the fill, drawn as one pixel wide columns, clipped to
@@ -606,7 +654,15 @@ func (w *window) set(s step, text string) {
 	}
 }
 
-func (w *window) waiting()        { w.set(stepWaiting, w.pl.text(textWaiting)) }
+func (w *window) waiting()       { w.set(stepWaiting, w.pl.text(textWaiting)) }
+func (w *window) disconnecting() { w.set(stepDisconnecting, w.pl.text(textDisconnecting)) }
+
+// logActivity records that the install log moved on (called from the worker thread).
+func (w *window) logActivity(action string) {
+	w.mu.Lock()
+	w.model = w.model.withLog(action, time.Now())
+	w.mu.Unlock()
+}
 func (w *window) installing()     { w.set(stepInstalling, w.pl.text(textInstalling)) }
 func (w *window) starting()       { w.set(stepStarting, w.pl.text(textStarting)) }
 func (w *window) failed(m string) { w.set(stepFailed, m) }

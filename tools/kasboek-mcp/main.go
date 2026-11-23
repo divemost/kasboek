@@ -220,9 +220,14 @@ func main() {
 	cleanup := flag.Bool("uninstall-cleanup", false, "used by the uninstaller: remove Kasboek from the Claude apps' settings and delete caches")
 	removeData := flag.Bool("remove-data", false, "with --uninstall-cleanup: also delete Kasboek's data folder")
 	apply := flag.String("apply-update", "", "used by Kasboek's updater (Windows): install the update described by this plan file, then open Kasboek again")
+	closeBridges := flag.String("close-bridges", "", "used by the Windows installer: end the kasboek-mcp programs that run from this install folder, so the update can replace them")
 	flag.Parse()
 	if *showVersion {
 		fmt.Println(version)
+		return
+	}
+	if *closeBridges != "" {
+		closeBridgesFlag(*closeBridges)
 		return
 	}
 	if *apply != "" {

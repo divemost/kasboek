@@ -8,18 +8,18 @@
  * Only release files of this repository are downloaded; nothing about the person's data is sent.
  */
 import { spawn } from 'node:child_process'
-import { createHash } from 'node:crypto'
-import { chmodSync, copyFileSync, createWriteStream, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { app, nativeTheme, net, shell } from 'electron'
 import { AppError } from '@core/errors'
 import type { UpdateStatus } from '@shared/types'
-import { buildUpdatePlan, checksumFromSums, failedUpdateMessage, installKind, installStep, newer, oneAtATime, pickAsset, safeAssetName, updateMayStillBeRunning, waitForHelperStart, type UpdatePlan } from '@core/update'
+import { buildUpdatePlan, checksumFromSums, failedUpdateMessage, installKind, installStep, newer, oneAtATime, pickAsset, relaunchAfterExit, safeAssetName, updateMayStillBeRunning, waitForHelperStart, type UpdatePlan } from '@core/update'
 import { helperPath } from './mcp/channel'
 import { paths } from './paths'
 import { getPrefs } from './prefs'
 import { broadcast, isUnlocked } from './session'
 import { stamp, writeTransfer } from './transfer/service'
+import { DownloadError, downloadFile, limits } from './update-download'
 import { updateTexts } from './update-texts'
 import { TRANSFER_EXTENSION } from '@core/transfer-format'
 
@@ -32,6 +32,8 @@ const DAY = 24 * 60 * 60 * 1000
 const override = (): string | null => (app.isPackaged ? null : process.env['KASBOEK_UPDATE_API'] || null)
 const supported = (): boolean => app.isPackaged || !!override()
 const updatesDir = (): string => join(paths.dataDir, 'updates')
+/** The logs of the last update, kept after it went in (see keepLogs). */
+const lastUpdateDir = (): string => join(paths.dataDir, 'updates-last')
 const pendingFile = (): string => join(updatesDir(), 'pending.json')
 
 interface Asset {
@@ -41,10 +43,12 @@ interface Asset {
   sha256: string | null
 }
 
-let status: UpdateStatus = { state: 'idle', current: app.getVersion(), latest: null, notes: null, pageUrl: null, kind: null, sizeBytes: null, progress: 0, error: null, lastCheckedAt: null, supported: supported() }
+let status: UpdateStatus = { state: 'idle', current: app.getVersion(), latest: null, notes: null, pageUrl: null, kind: null, sizeBytes: null, progress: 0, downloadNote: null, error: null, lastCheckedAt: null, supported: supported() }
 let asset: Asset | null = null
 let file: string | null = null
 let busy = false
+/** Cancels the running download (the Cancel button). */
+let downloadCancel: AbortController | null = null
 /** Kept after a restart where the update didn't install, until it installs. */
 let failedInstall: string | null = null
 let lastSent = 0
@@ -69,7 +73,7 @@ const allowedDownload = (url: string): boolean => {
 }
 
 async function getJson(url: string): Promise<unknown> {
-  const res = await net.fetch(url, { headers: { accept: 'application/vnd.github+json', 'user-agent': 'Kasboek' }, cache: 'no-store' })
+  const res = await net.fetch(url, { headers: { accept: 'application/vnd.github+json', 'user-agent': 'Kasboek' }, cache: 'no-store', signal: AbortSignal.timeout(limits.headersMs) })
   if (res.status === 404) return null
   if (!res.ok) throw new AppError('update.http', `GitHub answered ${res.status}.`)
   return res.json()
@@ -81,7 +85,7 @@ async function checksum(assets: { name: string; browser_download_url: string; di
   if (own?.startsWith('sha256:')) return own.slice(7).toLowerCase()
   const sums = assets.find((x) => /^SHA256SUMS(\.txt)?$/i.test(x.name))
   if (!sums || !allowedDownload(sums.browser_download_url)) return null
-  const res = await net.fetch(sums.browser_download_url)
+  const res = await net.fetch(sums.browser_download_url, { signal: AbortSignal.timeout(limits.headersMs) })
   if (!res.ok) return null
   return checksumFromSums(await res.text(), name)
 }
@@ -119,43 +123,59 @@ export async function checkForUpdate(): Promise<UpdateStatus> {
   }
 }
 
+/** What the person is told when a download ends in `err`. */
+function downloadMessage(err: unknown): string {
+  if (!(err instanceof DownloadError)) return 'The download stopped. Check the connection and try again.'
+  if (err.code === 'stalled' || err.code === 'timeout') return 'The download stopped because no data came in. Check the connection and try again.'
+  if (err.code === 'network') return 'The download stopped. Check the connection and try again.'
+  return err.message
+}
+
 export async function downloadUpdate(): Promise<UpdateStatus> {
   if (!asset) throw new AppError('update.none', 'There is no update file for this computer in the latest release.')
   if (!asset.sha256) throw new AppError('update.no_checksum', 'The release has no checksum for this file, so Kasboek won’t install it. Download it from the release page instead.')
   if (status.state === 'downloading') return status
   const target = asset
+  const sha256 = asset.sha256
   mkdirSync(updatesDir(), { recursive: true })
   const dest = join(updatesDir(), basename(target.name))
   const partial = dest + '.partial'
-  set({ state: 'downloading', progress: 0, error: null })
+  const cancel = new AbortController()
+  downloadCancel = cancel
+  // Carries on from a part that is already on disk (an earlier try that stopped).
+  const have = existsSync(partial) ? statSync(partial).size : 0
+  set({ state: 'downloading', progress: target.size && have ? Math.min(1, have / target.size) : 0, downloadNote: null, error: null })
   try {
-    const res = await net.fetch(target.url, { cache: 'no-store' })
-    if (!res.ok || !res.body) throw new AppError('update.http', `The download failed (${res.status}).`)
-    const total = Number(res.headers.get('content-length')) || target.size || 0
-    const hash = createHash('sha256')
-    const out = createWriteStream(partial)
-    let got = 0
-    const reader = res.body.getReader()
-    for (;;) {
-      const { done, value } = await reader.read()
-      if (done) break
-      hash.update(value)
-      got += value.length
-      if (!out.write(value)) await new Promise<void>((r) => out.once('drain', () => r()))
-      if (total) set({ progress: Math.min(1, got / total) }, false)
-    }
-    await new Promise<void>((resolve, reject) => out.end((e?: Error | null) => (e ? reject(e) : resolve())))
-    if (hash.digest('hex') !== target.sha256) {
-      rmSync(partial, { force: true })
-      throw new AppError('update.checksum', 'The downloaded file doesn’t match its checksum, so it was deleted. Try again later.')
-    }
+    await downloadFile({
+      url: target.url,
+      partial,
+      sha256,
+      size: target.size,
+      fetch: (url, init) => net.fetch(url, init),
+      cancel: cancel.signal,
+      onProgress: (got, total) => set({ progress: total ? Math.min(1, got / total) : 0, downloadNote: null }, false),
+      onRetry: () => set({ downloadNote: 'retrying' }),
+      onStall: (stalled) => set({ downloadNote: stalled ? 'stalled' : null })
+    })
     renameSync(partial, dest)
     file = dest
-    return set({ state: 'ready', progress: 1 })
+    return set({ state: 'ready', progress: 1, downloadNote: null })
   } catch (err) {
-    rmSync(partial, { force: true })
-    return set({ state: 'error', error: err instanceof AppError ? err.message : 'The download stopped. Check the connection and try again.' })
+    if (err instanceof DownloadError && err.code === 'cancelled') {
+      rmSync(partial, { force: true })
+      return set({ state: 'available', progress: 0, downloadNote: null, error: null })
+    }
+    // A part that is on disk stays, so "Try again" carries on from it (a checksum that didn't match removes it).
+    return set({ state: 'error', downloadNote: null, error: downloadMessage(err) })
+  } finally {
+    downloadCancel = null
   }
+}
+
+/** The Cancel button: stops the download and removes what was downloaded. */
+export function cancelDownload(): UpdateStatus {
+  downloadCancel?.abort()
+  return status
 }
 
 /**
@@ -209,7 +229,11 @@ async function startUpdateHelper(msi: string, sha256: string): Promise<void> {
   child.unref()
 }
 
-/** Replaces the running AppImage with the new one and starts it. */
+/**
+ * Replaces the running AppImage with the new one. The new one is started by a small shell command
+ * once this process has ended (see relaunchAfterExit), not now: two copies running at once would
+ * leave the new one without the single-instance lock, and it would quit at once.
+ */
 function installAppImage(downloaded: string): void {
   const current = process.env['APPIMAGE']!
   const next = join(dirname(current), `.${basename(current)}.new`)
@@ -221,7 +245,8 @@ function installAppImage(downloaded: string): void {
     rmSync(next, { force: true })
     throw new AppError('update.not_writable', `Kasboek can’t replace ${current}. Download the new AppImage from the release page and replace it yourself.`)
   }
-  spawn(current, [], { detached: true, stdio: 'ignore' }).unref()
+  const { command, args } = relaunchAfterExit(process.pid, current)
+  spawn(command, args, { detached: true, stdio: 'ignore' }).unref()
 }
 
 /** Gives the window time to show the new state before the backup holds the main process (the database export and encryption run synchronously). */
@@ -284,6 +309,32 @@ function cleanUpdatesDir(): void {
   rmSync(updatesDir(), { recursive: true, force: true })
 }
 
+/** At most this much of each log is kept (the end of it, which is where a freeze shows). */
+export const KEPT_LOG_BYTES = 256 * 1024
+const KEPT_LOGS = ['install.log', 'helper.log', 'result.json']
+
+/**
+ * Keeps the logs of the update that just ran, in `updates-last` (replaced by every update, each file
+ * cut to its last 256 KB), so a freeze can be looked into after the updates folder is cleaned up.
+ * The logs hold paths and Windows Installer's messages, no keys or data; they stay on this computer.
+ */
+export function keepLogs(from = updatesDir(), to = lastUpdateDir()): void {
+  try {
+    const present = KEPT_LOGS.filter((n) => existsSync(join(from, n)))
+    if (present.length === 0) return
+    rmSync(to, { recursive: true, force: true })
+    mkdirSync(to, { recursive: true })
+    for (const name of present) {
+      let raw = readFileSync(join(from, name))
+      // An even start keeps a UTF-16 log (Windows Installer's) readable.
+      if (raw.length > KEPT_LOG_BYTES) raw = raw.subarray(raw.length - KEPT_LOG_BYTES)
+      writeFileSync(join(to, name), raw)
+    }
+  } catch {
+    // Keeping logs is a courtesy: never let it stop Kasboek from starting.
+  }
+}
+
 /** After an update: clean up, or tell the person it didn't install. */
 function afterRestart(): void {
   if (!existsSync(pendingFile())) return
@@ -297,6 +348,7 @@ function afterRestart(): void {
     }
     // Started by hand while the installer still works: say nothing and touch nothing, the next start decides.
     if (updateMayStillBeRunning(version, app.getVersion(), result, at)) return
+    keepLogs()
     const message = failedUpdateMessage(version, app.getVersion(), result)
     if (message) {
       failedInstall = message

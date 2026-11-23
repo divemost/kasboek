@@ -18,7 +18,7 @@ import (
 
 // Folders in Kasboek's data folder that hold nothing of the person's: browser caches, logs and
 // downloaded updates. The database, account, settings and safety backups are elsewhere in it.
-var cacheDirs = []string{"Cache", "Code Cache", "GPUCache", "DawnCache", "DawnGraphiteCache", "DawnWebGPUCache", "Shared Dictionary", "blob_storage", "Crashpad", "logs", "updates"}
+var cacheDirs = []string{"Cache", "Code Cache", "GPUCache", "DawnCache", "DawnGraphiteCache", "DawnWebGPUCache", "Shared Dictionary", "blob_storage", "Crashpad", "logs", "updates", "updates-last"}
 
 func samePath(a, b string) bool {
 	a, b = filepath.Clean(a), filepath.Clean(b)

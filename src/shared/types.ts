@@ -293,6 +293,8 @@ export interface UpdateStatus {
   sizeBytes: number | null
   /** Download progress, 0–1. */
   progress: number
+  /** While downloading: nothing came in for a while (`stalled`), or the connection broke and it tries again (`retrying`). */
+  downloadNote: 'stalled' | 'retrying' | null
   error: string | null
   lastCheckedAt: string | null
   /** False in development runs, where nothing is checked. */

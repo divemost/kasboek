@@ -27,6 +27,11 @@ type fakePlatform struct {
 	msiexecRuns [][]string
 	timeouts    []time.Duration
 	started     [][]string
+	// bridges that run from the install folder (listed until they are ended) and one that does not.
+	bridges    []bridgeProc
+	bridgesErr error
+	ended      []bridgeProc
+	onRun      func() // called by every run of Windows Installer (moves a fake clock)
 }
 
 func (f *fakePlatform) log(s string) { f.events = append(f.events, s) }
@@ -55,6 +60,37 @@ func (f *fakePlatform) othersRunning(string) (bool, error) {
 	}
 	return false, nil
 }
+func (f *fakePlatform) bridgesRunning(dir string) ([]bridgeProc, error) {
+	f.log("bridges")
+	if f.bridgesErr != nil {
+		return nil, f.bridgesErr
+	}
+	var in []bridgeProc
+	for _, b := range f.bridges {
+		if pathInside(b.image, dir, samePath) {
+			in = append(in, b)
+		}
+	}
+	return in, nil
+}
+func (f *fakePlatform) endBridges(procs []bridgeProc) error {
+	f.log("end-bridges")
+	f.ended = append(f.ended, procs...)
+	var left []bridgeProc
+	for _, b := range f.bridges {
+		kept := true
+		for _, e := range procs {
+			if e == b {
+				kept = false
+			}
+		}
+		if kept {
+			left = append(left, b)
+		}
+	}
+	f.bridges = left
+	return nil
+}
 func (f *fakePlatform) lockAndHash(path string) (string, func(), error) {
 	f.log("lock")
 	if f.lockErr != nil {
@@ -72,6 +108,9 @@ func (f *fakePlatform) runMsiexec(args []string, timeout time.Duration) (int, er
 	f.log("msiexec")
 	f.msiexecRuns = append(f.msiexecRuns, args)
 	f.timeouts = append(f.timeouts, timeout)
+	if f.onRun != nil {
+		f.onRun()
+	}
 	if f.hang {
 		f.log("killed")
 		return 0, errMsiexecTimeout
@@ -90,11 +129,13 @@ func (f *fakePlatform) start(exe string, args []string) error {
 
 type fakeUI struct{ events []string }
 
-func (u *fakeUI) waiting()        { u.events = append(u.events, "waiting") }
-func (u *fakeUI) installing()     { u.events = append(u.events, "installing") }
-func (u *fakeUI) starting()       { u.events = append(u.events, "starting") }
-func (u *fakeUI) failed(m string) { u.events = append(u.events, "failed:"+m) }
-func (u *fakeUI) close()          { u.events = append(u.events, "close") }
+func (u *fakeUI) waiting()             { u.events = append(u.events, "waiting") }
+func (u *fakeUI) disconnecting()       { u.events = append(u.events, "disconnecting") }
+func (u *fakeUI) logActivity(a string) { u.events = append(u.events, "log:"+a) }
+func (u *fakeUI) installing()          { u.events = append(u.events, "installing") }
+func (u *fakeUI) starting()            { u.events = append(u.events, "starting") }
+func (u *fakeUI) failed(m string)      { u.events = append(u.events, "failed:"+m) }
+func (u *fakeUI) close()               { u.events = append(u.events, "close") }
 
 // runPlan is the update as applyWith does it: Kasboek's process is opened first.
 func runPlan(f *fakePlatform, u ui, pl updatePlan, t timing, passive bool) error {
@@ -151,7 +192,7 @@ func TestUpdateStepsInOrder(t *testing.T) {
 	if err := runPlan(f, u, pl, testTiming(&slept), true); err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"open", "image", "wait", "close", "others", "lock", "msiexec", "unlock", "start"}
+	want := []string{"open", "image", "wait", "close", "others", "bridges", "lock", "msiexec", "unlock", "start"}
 	if !reflect.DeepEqual(f.events, want) {
 		t.Fatalf("steps %v, want %v", f.events, want)
 	}
@@ -261,7 +302,7 @@ func TestMsiexecThatNeverEndsFailsAndRelaunches(t *testing.T) {
 	if err := runPlan(f, u, pl, realTiming, true); !errors.Is(err, errMsiexecTimeout) {
 		t.Fatalf("error %v", err)
 	}
-	if len(f.timeouts) != 1 || f.timeouts[0] != 15*time.Minute {
+	if len(f.timeouts) != 1 || f.timeouts[0] != 10*time.Minute {
 		t.Fatalf("timeouts %v", f.timeouts)
 	}
 	if r := readResult(t, pl); r.Outcome != "failed" || r.Code != -1 {

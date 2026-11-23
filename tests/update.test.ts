@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildUpdatePlan, failedUpdateMessage, installKind, installStep, msiOutcome, msiOutcomeMessage, newer, oneAtATime, pickAsset, updateMayStillBeRunning, waitForHelperStart, type HelperProbe, type MsiOutcome, type UpdatePlanInput } from '@core/update'
+import { PENDING_GRACE_MS, buildUpdatePlan, relaunchAfterExit, failedUpdateMessage, installKind, installStep, msiOutcome, msiOutcomeMessage, newer, oneAtATime, pickAsset, updateMayStillBeRunning, waitForHelperStart, type HelperProbe, type MsiOutcome, type UpdatePlanInput } from '@core/update'
 
 const files = ['Kasboek-0.12.0-win-x64.msi', 'Kasboek-0.12.0-win-arm64.msi', 'Kasboek-0.12.0-mac-arm64.dmg', 'Kasboek-0.12.0-mac-x64.dmg', 'Kasboek-0.12.0-x86_64.AppImage', 'Kasboek-0.12.0-arm64.AppImage', 'Kasboek-0.12.0-amd64.deb', 'Kasboek-0.12.0-arm64.deb', 'SHA256SUMS.txt'].map((name) => ({ name }))
 
@@ -30,7 +30,7 @@ describe('updates', () => {
   })
 })
 
-const texts = { waiting: 'w', installing: 'i', starting: 's', failed: 'f', cancelled: 'c', notClosed: 'n' }
+const texts = { waiting: 'w', installing: 'i', starting: 's', failed: 'f', cancelled: 'c', notClosed: 'n', disconnecting: 'd', stillWorking: 'sw', noProgress: 'np', slow: 'sl' }
 const hash = 'ab'.repeat(32)
 const winPlan = (over: Partial<UpdatePlanInput> = {}): UpdatePlanInput => ({
   platform: 'win32',
@@ -140,11 +140,13 @@ describe('update that may still be installing', () => {
 
   it('is left alone when the note is young, nothing is installed and there is no result', () => {
     expect(updateMayStillBeRunning('0.12.0', '0.11.0', null, at(60_000), now)).toBe(true)
-    expect(updateMayStillBeRunning('0.12.0', '0.11.0', undefined, at(4 * 60_000), now)).toBe(true)
+    expect(updateMayStillBeRunning('0.12.0', '0.11.0', undefined, at(15 * 60_000), now)).toBe(true)
+    // Longer than the helper's own limit for Windows Installer (12 minutes).
+    expect(PENDING_GRACE_MS).toBeGreaterThan(12 * 60_000)
   })
 
   it('is decided once the note is old, there is a result, or the version is already there', () => {
-    expect(updateMayStillBeRunning('0.12.0', '0.11.0', null, at(5 * 60_000), now)).toBe(false)
+    expect(updateMayStillBeRunning('0.12.0', '0.11.0', null, at(PENDING_GRACE_MS), now)).toBe(false)
     expect(updateMayStillBeRunning('0.12.0', '0.11.0', { outcome: 'failed' }, at(1000), now)).toBe(false)
     expect(updateMayStillBeRunning('0.12.0', '0.12.0', null, at(1000), now)).toBe(false)
   })
@@ -262,5 +264,16 @@ describe('one install at a time', () => {
     release()
     expect(await first).toBe('installing')
     expect(await run()).toBe('installing')
+  })
+})
+
+describe('AppImage relaunch', () => {
+  it('waits for the old process and passes the path as an argument, not inside the script', () => {
+    const { command, args } = relaunchAfterExit(4321, "/home/a b/it's.AppImage")
+    expect(command).toBe('/bin/sh')
+    expect(args.slice(3)).toEqual(['4321', "/home/a b/it's.AppImage"])
+    expect(args[1]).toContain('kill -0 "$1"')
+    expect(args[1]).toContain('exec "$2"')
+    expect(args[1]).not.toContain('AppImage')
   })
 })

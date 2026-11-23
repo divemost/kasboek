@@ -11,7 +11,7 @@ import { update as ptBR } from '../renderer/src/i18n/locales/pt-BR.json'
 import { update as ptPT } from '../renderer/src/i18n/locales/pt-PT.json'
 
 export type UpdateTexts = UpdatePlan['texts']
-export const UPDATE_TEXT_KEYS: readonly (keyof UpdateTexts)[] = ['waiting', 'installing', 'starting', 'failed', 'cancelled', 'notClosed']
+export const UPDATE_TEXT_KEYS: readonly (keyof UpdateTexts)[] = ['waiting', 'installing', 'starting', 'failed', 'cancelled', 'notClosed', 'disconnecting', 'stillWorking', 'noProgress', 'slow']
 
 /** Regional files hold only what differs, so `helper` may be missing. */
 type Section = { helper?: Partial<UpdateTexts> }
@@ -31,5 +31,5 @@ export function updateTexts(language: string): UpdateTexts {
     }
     return ''
   }
-  return { waiting: pick('waiting'), installing: pick('installing'), starting: pick('starting'), failed: pick('failed'), cancelled: pick('cancelled'), notClosed: pick('notClosed') }
+  return { waiting: pick('waiting'), installing: pick('installing'), starting: pick('starting'), failed: pick('failed'), cancelled: pick('cancelled'), notClosed: pick('notClosed'), disconnecting: pick('disconnecting'), stillWorking: pick('stillWorking'), noProgress: pick('noProgress'), slow: pick('slow') }
 }

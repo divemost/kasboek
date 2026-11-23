@@ -1325,7 +1325,7 @@
     "title": "Kasboek {{version}} est disponible",
     "current": "Vous avez la version {{version}}.",
     "downloading": "Téléchargement… {{percent}} % de {{size}}",
-    "readyRestart": "Téléchargé et vérifié. Kasboek se ferme, affiche la progression de l’installation dans sa propre fenêtre et se rouvre. Cela prend environ une minute.",
+    "readyRestart": "Téléchargé et vérifié. Kasboek se ferme, affiche la progression de l’installation dans sa propre fenêtre et se rouvre. Cela prend en général une à deux minutes, davantage sur un ordinateur lent.",
     "ready": {
       "dmg": "Téléchargé et vérifié. Kasboek ouvre l’image disque ; faites glisser Kasboek dans Applications et remplacez l’ancienne version.",
       "deb": "Téléchargé et vérifié. Kasboek ouvre le paquet dans votre installateur de logiciels."
@@ -1338,7 +1338,11 @@
       "starting": "Démarrage de Kasboek…",
       "failed": "La mise à jour n’a pas pu être installée. Kasboek redémarre.",
       "cancelled": "La mise à jour a été annulée. Kasboek redémarre.",
-      "notClosed": "Kasboek ne s’est pas fermé à temps, la mise à jour n’a donc pas été installée. Kasboek se rouvre."
+      "notClosed": "Kasboek ne s’est pas fermé à temps, la mise à jour n’a donc pas été installée. Kasboek se rouvre.",
+      "disconnecting": "Déconnexion de Claude de Kasboek…",
+      "stillWorking": "Windows Installer travaille encore (cela peut prendre plusieurs minutes).",
+      "noProgress": "Rien de nouveau depuis une minute. Si une application Claude est ouverte, la fermer peut aider.",
+      "slow": "Cela prend du temps ? Téléchargez-le depuis la page de la version :"
     },
     "opened": {
       "dmg": "Faites glisser Kasboek dans Applications et choisissez Remplacer. Puis quittez Kasboek et rouvrez-le.",
@@ -1358,7 +1362,12 @@
     "checking": "Recherche…",
     "upToDate": "Vous avez la dernière version (vérifié {{when}}).",
     "availableHint": "La version {{version}} est disponible : utilisez le bouton en haut.",
-    "checkNow": "Rechercher"
+    "checkNow": "Rechercher",
+    "cancel": "Annuler",
+    "retry": "Réessayer",
+    "stalled": "Aucune donnée depuis 30 s… nouvelle tentative",
+    "retrying": "Connexion interrompue… nouvelle tentative",
+    "bridgesNote": "Les applications Claude connectées à Kasboek sont déconnectées pendant la mise à jour. Si l’une ne se reconnecte pas ensuite, redémarrez-la."
   },
   "welcome": {
     "aiTitle": "Configurer l’assistant",
