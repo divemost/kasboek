@@ -1,5 +1,5 @@
 import { X } from 'lucide-react'
-import { useCallback, useEffect, useLayoutEffect, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { Page } from '../App'
 import { useAssistantEnabled } from '../lib/settings'
@@ -8,13 +8,14 @@ import { Button } from './ui'
 /** The parts of Kasboek the tour points at, in order. Each target carries data-tour="<id>". */
 const STEPS: { id: string; page?: Page }[] = [
   { id: 'overview', page: 'overview' },
+  { id: 'accounts', page: 'accounts' },
   { id: 'transactions', page: 'transactions' },
   { id: 'budgets', page: 'budgets' },
   { id: 'recurring', page: 'recurring' },
   { id: 'goals', page: 'goals' },
   { id: 'year', page: 'year' },
-  { id: 'networth', page: 'networth' },
   { id: 'import', page: 'import' },
+  { id: 'importBar' },
   { id: 'assistant' },
   { id: 'settings', page: 'settings' },
   { id: 'lock', page: 'overview' }
@@ -38,10 +39,18 @@ export function Tour({ go, openAssistant }: { go: (p: Page) => void; openAssista
   const steps = assistantEnabled ? STEPS : STEPS.filter((x) => x.id !== 'assistant')
   const [step, setStep] = useState<number | null>(null)
   const [rect, setRect] = useState<DOMRect | null>(null)
+  const heading = useRef<HTMLHeadingElement>(null)
+  // What had focus when the tour started: it gets focus back when the tour ends.
+  const starter = useRef<HTMLElement | null>(null)
+  // Each step takes focus on its heading, so a screen reader reads the step and the keyboard continues at its buttons.
+  useEffect(() => {
+    if (step !== null) heading.current?.focus()
+  }, [step])
 
   useEffect(() => {
     const start = (): void => {
       requested = false
+      starter.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
       setStep(0)
     }
     if (requested) start()
@@ -76,6 +85,11 @@ export function Tour({ go, openAssistant }: { go: (p: Page) => void; openAssista
   const close = useCallback(() => {
     setStep(null)
     go('overview')
+    // After the page behind has re-rendered; the starter may be gone with its page.
+    setTimeout(() => {
+      if (starter.current?.isConnected) starter.current.focus()
+      starter.current = null
+    }, 0)
   }, [go])
   useEffect(() => {
     if (step === null) return
@@ -117,7 +131,7 @@ export function Tour({ go, openAssistant }: { go: (p: Page) => void; openAssista
             <X size={14} />
           </button>
         </div>
-        <h2 className="mt-1 font-serif text-[17px] font-medium">{t(`nav.${current.id}`)}</h2>
+        <h2 ref={heading} tabIndex={-1} className="mt-1 font-serif outline-none text-[17px] font-medium">{t(`nav.${current.id}`)}</h2>
         <p className="mt-1 text-[13px] text-muted">{t(`tour.step.${!assistantEnabled && (current.id === 'import' || current.id === 'settings') ? `${current.id}Local` : current.id}`)}</p>
         <div className="mt-4 flex items-center justify-between gap-2">
           <button type="button" className="text-[13px] text-muted hover:text-text" onClick={close}>{t('tour.skip')}</button>

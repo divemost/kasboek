@@ -65,7 +65,7 @@ export function currentBalance(db: Db, accountId: number): number {
  */
 export function setBankBalance(db: Db, input: { accountId: number; date: string; balanceCents: number; note?: string | null }, today = localToday()): BankBalanceResult {
   const a = account(db, input.accountId)
-  if (a.kind === 'investment') throw new AppError('balance.investment', 'An investment account has a value, not a bank balance: record it as a value (valuations.set, or Set value on the Net worth page).')
+  if (a.kind === 'investment') throw new AppError('balance.investment', 'An investment account has a value, not a bank balance: record it as a value (valuations.set, or Set value on the Accounts page).')
   if (input.date > today) throw new AppError('balance.future', 'Enter the balance of today or an earlier day.')
   const others = checkpoints(db, input.accountId).filter((c) => c.date !== input.date)
   let expectedCents: number | null = null

@@ -1,8 +1,11 @@
-import { CheckCircle2, FileUp, Undo2 } from 'lucide-react'
+import { Check, CheckCircle2, FileUp, Landmark, Plus, Undo2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { ImportCommitResult, ImportPreview } from '@shared/types'
+import { isFirstTransaction, monthAfterFirstImport } from '@shared/get-started'
+import { monthOf } from '@shared/month'
+import type { AccountWithBalance, ImportCommitResult, ImportPreview } from '@shared/types'
 import type { Page } from '../App'
+import { AccountModal } from '../components/AccountModal'
 import { Button, Card, CardHeader, PageHeader, Select, cx } from '../components/ui'
 import { useToast } from '../components/Toast'
 import { SNIFF_BYTES, fileKindOf, isCancelledRead } from '@shared/pdf-import'
@@ -23,15 +26,20 @@ function toBase64(buf: ArrayBuffer): string {
   return btoa(s)
 }
 
-export function ImportPage({ go }: { go: (p: Page) => void }) {
+export function ImportPage({ go }: { go: (p: Page, filter?: Record<string, unknown>) => void }) {
   const { t } = useTranslation()
   const toast = useToast()
-  const { fmt } = useSettings()
+  const { fmt, updatePrefs } = useSettings()
   const accounts = useOp('accounts.list')
   const batches = useOp('import.batches')
   const [accountId, setAccountId] = useState<number | null>(null)
   const [preview, setPreview] = useState<ImportPreview | null>(null)
-  const [done, setDone] = useState<(ImportCommitResult & { accountId: number; currency: string }) | null>(null)
+  // first: the very first transactions in Kasboek, which get a bigger "your overview is ready" than the usual note.
+  const [done, setDone] = useState<(ImportCommitResult & { accountId: number; currency: string; first: boolean }) | null>(null)
+  const [addingAccount, setAddingAccount] = useState(false)
+  const doneActions = useRef<HTMLDivElement>(null)
+  // The accounts as they were before the open import: followed while none is open, then kept until it is saved.
+  const accountsBefore = useRef<AccountWithBalance[] | null>(null)
   const [busy, setBusy] = useState(false)
   const [drag, setDrag] = useState(false)
   // A PDF being read: the page the reader is on (0 before the first page is reported).
@@ -41,6 +49,12 @@ export function ImportPage({ go }: { go: (p: Page) => void }) {
   const account = accountId ?? accounts.data?.find((a) => !a.archived)?.id ?? null
   const assistant = useAssistant()
   const assistantEnabled = useAssistantEnabled()
+  useEffect(() => {
+    if (!preview) accountsBefore.current = accounts.data
+  }, [preview, accounts.data])
+  useEffect(() => {
+    if (done?.first) doneActions.current?.querySelector('button')?.focus()
+  }, [done?.first, done?.batchId])
   // When the running check started (null: none), so the timer continues after switching tabs.
   const [assisting, setAssisting] = useState<number | null>(null)
   const [assistKind, setAssistKind] = useState<AssistKind>('check')
@@ -152,7 +166,10 @@ export function ImportPage({ go }: { go: (p: Page) => void }) {
         }}
         onCommitted={(r) => {
           setPreview(null)
-          setDone({ ...r, accountId: preview.accountId, currency: preview.currency })
+          const first = r.imported > 0 && isFirstTransaction(accountsBefore.current)
+          // The Overview's one-time tip follows the very first import.
+          if (first) void updatePrefs({ firstTipDone: false }).catch(() => undefined)
+          setDone({ ...r, accountId: preview.accountId, currency: preview.currency, first })
           void batches.reload()
         }}
       />
@@ -163,15 +180,30 @@ export function ImportPage({ go }: { go: (p: Page) => void }) {
     <>
       <PageHeader title={t('import.title')} subtitle={t('import.subtitle')} />
       {done && (
-        <div className="mb-4 rounded-xl border border-border bg-accent-soft px-4 py-3 text-[13px]">
-          <div className="flex items-center gap-3">
-            <CheckCircle2 size={16} className="text-accent" />
-            <span className="flex-1">{t('import.done', { count: done.imported })}</span>
-            <Button size="sm" variant="ghost" icon={<Undo2 size={14} />} onClick={() => void call('import.undo', { batchId: done.batchId }).then((r) => { toast(t('import.undone', { count: r.deleted })); setDone(null); void batches.reload() })}>{t('import.undo')}</Button>
-            <Button size="sm" variant="primary" onClick={() => go('transactions')}>{t('import.viewTransactions')}</Button>
-          </div>
+        <div className={cx('mb-4 rounded-xl border border-border bg-accent-soft text-[13px]', done.first ? 'px-5 py-5' : 'px-4 py-3')}>
+          {done.first ? (
+            <>
+              <div className="flex items-center gap-2.5">
+                <Check size={20} strokeWidth={2.5} aria-hidden="true" className="text-accent" />
+                <h2 className="font-serif text-[22px] font-medium">{t('overview.start.doneTitle')}</h2>
+              </div>
+              <p id="import-done-body" className="mt-1 pl-[30px] text-muted">{t('overview.start.doneBody', { count: done.imported, account: (accounts.data ?? []).find((a) => a.id === done.accountId)?.name ?? '' })}</p>
+              <div ref={doneActions} className="mt-4 flex flex-wrap gap-2 pl-[30px]">
+                <Button variant="primary" aria-describedby="import-done-body" onClick={() => go('overview', { month: monthAfterFirstImport(done.lastDate, monthOf()) })}>{t('overview.start.doneAction')}</Button>
+                <Button variant="ghost" onClick={() => go('transactions')}>{t('import.viewTransactions')}</Button>
+                <Button variant="ghost" icon={<Undo2 size={14} />} onClick={() => void call('import.undo', { batchId: done.batchId }).then((r) => { toast(t('import.undone', { count: r.deleted })); setDone(null); void batches.reload() })}>{t('import.undo')}</Button>
+              </div>
+            </>
+          ) : (
+            <div className="flex items-center gap-3">
+              <CheckCircle2 size={16} className="text-accent" />
+              <span className="flex-1">{t('import.done', { count: done.imported })}</span>
+              <Button size="sm" variant="ghost" icon={<Undo2 size={14} />} onClick={() => void call('import.undo', { batchId: done.batchId }).then((r) => { toast(t('import.undone', { count: r.deleted })); setDone(null); void batches.reload() })}>{t('import.undo')}</Button>
+              <Button size="sm" variant="primary" onClick={() => go('transactions')}>{t('import.viewTransactions')}</Button>
+            </div>
+          )}
           {done.lastDate && done.balanceOnLastDate !== null && (
-            <div className="mt-1 pl-7">
+            <div className={done.first ? 'mt-3 pl-[30px]' : 'mt-1 pl-7'}>
               <ImportBalanceCheck key={done.batchId} accountId={done.accountId} currency={done.currency} date={done.lastDate} kasboekCents={done.balanceOnLastDate} ask={done.askBalance} fromCsv={done.bankBalance} />
               {done.balanceNote && <p className="mt-1 text-xs text-warning">{done.balanceNote}</p>}
               {(done.transfersPaired > 0 || done.transfersSuggested > 0) && (
@@ -184,8 +216,10 @@ export function ImportPage({ go }: { go: (p: Page) => void }) {
         </div>
       )}
       {accounts.data && accounts.data.length === 0 ? (
-        <Card className="px-5 py-6 text-center text-[13px] text-muted">
-          {t('import.needAccount')} <button type="button" className="font-medium text-accent hover:underline" onClick={() => { openSettingsTab('accounts'); go('settings') }}>{t('import.addAccount')}</button>
+        <Card className="flex flex-col items-center px-5 py-10 text-center">
+          <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-xl bg-accent-soft text-accent"><Landmark size={20} /></div>
+          <p className="max-w-sm text-[13px] text-muted">{t('import.needAccount')}</p>
+          <Button className="mt-5" variant="primary" icon={<Plus size={14} />} onClick={() => setAddingAccount(true)}>{t('settings.addAccount')}</Button>
         </Card>
       ) : (
         <>
@@ -231,6 +265,16 @@ export function ImportPage({ go }: { go: (p: Page) => void }) {
           ))}
         </Card>
       )}
+      <AccountModal
+        account={addingAccount ? 'new' : null}
+        intro={t('import.needAccount')}
+        onClose={() => setAddingAccount(false)}
+        onSaved={(a) => {
+          setAddingAccount(false)
+          setAccountId(a.id)
+          void accounts.reload()
+        }}
+      />
     </>
   )
 }

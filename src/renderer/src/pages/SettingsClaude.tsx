@@ -9,7 +9,7 @@ import { customProviders, providerGap, resolveProvider } from '@shared/ai-provid
 import { useAssistant } from '../components/AssistantPanel'
 import { DesktopRunningWarning, SeenLine, useClaudeClients, useDesktopOverwritten, useDesktopRunning } from '../components/ClaudeApps'
 import { ModelPicker } from '../components/ModelPicker'
-import { Badge, Button, Card, CardHeader, Field, Input, Modal, PasswordInput, Select, Switch } from '../components/ui'
+import { Badge, Button, Card, CardHeader, Field, FormError, Input, Modal, PasswordInput, Select, Switch } from '../components/ui'
 import { useToast } from '../components/Toast'
 import { call, useOp } from '../lib/api'
 import { useSettings } from '../lib/settings'
@@ -28,12 +28,17 @@ export function ClaudeSection() {
   const settings = useOp('settings.get')
   const [keyOpen, setKeyOpen] = useState(false)
   const [key, setKey] = useState('')
+  const [keyError, setKeyError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [models, setModels] = useState<string[]>([])
   const [loadingModels, setLoadingModels] = useState(false)
   const [modelsStatus, setModelsStatus] = useState<{ count: number } | { error: string } | null>(null)
   const [addOpen, setAddOpen] = useState(false)
   const [removeOpen, setRemoveOpen] = useState(false)
+  const closeKey = (): void => {
+    setKeyOpen(false)
+    setKeyError(null)
+  }
   // Changed elsewhere (e.g. "Stop Claude connection" in the tray menu).
   useEffect(() => window.kasboek.onEvent((e) => e.type === 'settings.changed' && void settings.reload()), [settings.reload]) // eslint-disable-line react-hooks/exhaustive-deps
   const s = settings.data
@@ -211,29 +216,31 @@ export function ClaudeSection() {
           </Button>
         </div>
       </Modal>
-      <Modal open={keyOpen} title={t('ai.addKeyFor', { name: preset.name })} onClose={() => setKeyOpen(false)}>
+      <Modal open={keyOpen} title={t('ai.addKeyFor', { name: preset.name })} onClose={closeKey}>
         <form
           className="flex flex-col gap-4"
           onSubmit={(e) => {
             e.preventDefault()
             setBusy(true)
+            setKeyError(null)
             void call('assistant.setKey', { apiKey: key, provider: preset.id })
               .then(() => {
                 toast(t('claude.keySaved'))
                 setKey('')
-                setKeyOpen(false)
+                closeKey()
               })
-              .catch((err) => toast(errText(err), 'error'))
+              .catch((err) => setKeyError(errText(err)))
               .finally(() => setBusy(false))
           }}
         >
           <p className="text-[13px] text-muted">{native ? t('claude.keyHelp') : t('ai.keyHelp', { name: preset.name })}</p>
           <Field label={t('claude.apiKey')}>{(id) => <PasswordInput id={id} autoFocus value={key} onChange={(e) => setKey(e.target.value)} placeholder={preset.keyPlaceholder ?? ''} />}</Field>
+          {keyError && <FormError>{keyError}</FormError>}
           <div className="flex justify-between gap-2">
             {preset.keyUrl ? <a className="self-center text-[13px] font-medium text-accent hover:underline" href={preset.keyUrl} target="_blank" rel="noreferrer">{t('ai.getKey', { name: preset.name })}</a> : <span />}
             <div className="flex gap-2">
-              <Button onClick={() => setKeyOpen(false)}>{t('settings.cancel')}</Button>
-              <Button type="submit" variant="primary" disabled={!key.trim() || busy}>{busy ? t('claude.checking') : t('settings.save')}</Button>
+              <Button onClick={closeKey}>{t('settings.cancel')}</Button>
+              <Button type="submit" variant="primary" busy={busy} disabled={!key.trim()}>{busy ? t('claude.checking') : t('settings.save')}</Button>
             </div>
           </div>
         </form>

@@ -1,9 +1,13 @@
-import { AlertTriangle, Check, PieChart, Sparkles, Tags } from 'lucide-react'
+import { AlertTriangle, Check, PieChart, Sparkles, Tags, X } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import { hasTransactions, overviewScreen } from '@shared/get-started'
 import { monthOf } from '@shared/month'
+import type { AccountWithBalance } from '@shared/types'
 import type { Page } from '../App'
+import { AccountModal } from '../components/AccountModal'
 import { CategoryBars, MonthBars } from '../components/charts'
+import { GetStarted } from '../components/GetStarted'
 import { Button, Card, CardHeader, EmptyState, MonthNav, PageHeader, cx } from '../components/ui'
 import { call, useOp } from '../lib/api'
 import { usePublishPageContext } from '../lib/page-context'
@@ -13,37 +17,57 @@ import { useToast } from '../components/Toast'
 import { errText } from './auth/parts'
 import { formatDate, monthLabel, monthShort } from '../lib/format'
 import { useSettings } from '../lib/settings'
-import { openSettingsTab, type SettingsTab } from '../lib/settings-tab'
+import { openSettingsTab } from '../lib/settings-tab'
 
 const toDate = (m: string): Date => new Date(Number(m.slice(0, 4)), Number(m.slice(5)) - 1, 1)
 
-export function Overview({ go }: { go: (p: Page, filter?: Record<string, unknown>) => void }) {
+type Go = (p: Page, filter?: Record<string, unknown>) => void
+
+/** The get-started screen while there is no transaction at all, the Overview once there is one. */
+export function Overview({ go, initialMonth }: { go: Go; initialMonth?: string }) {
   const { t } = useTranslation()
-  const { fmt, money, settings, prefs } = useSettings()
-  const [month, setMonth] = useState(monthOf())
+  const accounts = useOp('accounts.list')
+  const screen = overviewScreen(accounts.data, accounts.error !== null)
+  // The title and the three totals' places while the accounts load, instead of a blank page.
+  if (screen === 'loading')
+    return (
+      <div aria-busy="true">
+        <PageHeader title={t('overview.title')} />
+        <div className="grid grid-cols-1 gap-4 @[560px]:grid-cols-3">
+          {[0, 1, 2].map((i) => <Card key={i} className="h-[92px] motion-safe:animate-pulse">{null}</Card>)}
+        </div>
+      </div>
+    )
+  if (screen === 'start') return <GetStarted go={go} accounts={accounts.data!} />
+  return <OverviewMonth go={go} initialMonth={initialMonth} accounts={accounts.data ?? []} reloadAccounts={() => void accounts.reload()} />
+}
+
+function OverviewMonth({ go, initialMonth, accounts, reloadAccounts }: { go: Go; initialMonth?: string; accounts: AccountWithBalance[]; reloadAccounts: () => void }) {
+  const { t } = useTranslation()
+  const { fmt, money, settings, prefs, updatePrefs } = useSettings()
+  const [month, setMonth] = useState(initialMonth ?? monthOf())
+  const [addingAccount, setAddingAccount] = useState(false)
   const summary = useOp('summary.month', { month })
   const backup = useOp('backup.status')
-  const accounts = useOp('accounts.list')
   const assistant = useAssistant()
   usePublishPageContext({ page: 'overview', filters: { month }, selectedIds: [], openId: null, rows: [] })
   const alerts = useOp('alerts.list')
   const toast = useToast()
   const s = summary.data
-  const hasTx = (accounts.data ?? []).some((a) => a.transactionCount > 0)
+  const hasTx = hasTransactions(accounts)
 
-  const steps: { done: boolean; title: string; body: string; page: Page; tab?: SettingsTab }[] = [
-    { done: (accounts.data?.length ?? 0) > 0, title: t('overview.stepAccounts'), body: t('overview.stepAccountsBody'), page: 'settings', tab: 'accounts' },
-    { done: hasTx, title: t('overview.stepImport'), body: t('overview.stepImportBody'), page: 'import' },
-    { done: !!backup.data?.autoEnabled, title: t('overview.stepBackup'), body: t('overview.stepBackupBody'), page: 'settings', tab: 'data' }
+  const steps: { done: boolean; title: string; body: string; label: string; open: () => void }[] = [
+    { done: accounts.length > 0, title: t('overview.stepAccounts'), body: t('overview.stepAccountsBody'), label: t('overview.add'), open: () => setAddingAccount(true) },
+    { done: !!backup.data?.autoEnabled, title: t('overview.stepBackup'), body: t('overview.stepBackupBody'), label: t('overview.open'), open: () => { openSettingsTab('data'); go('settings') } }
   ]
   const allDone = steps.every((x) => x.done)
 
   return (
-    <>
+    <div className="fade-in">
       <PageHeader
         title={t('overview.title')}
         action={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {assistant?.configured && hasTx && (
               <Button
                 size="sm"
@@ -85,7 +109,15 @@ export function Overview({ go }: { go: (p: Page, filter?: Record<string, unknown
           ))}
         </div>
       )}
-      <div className="grid grid-cols-3 gap-4">
+      {!prefs.firstTipDone && hasTx && !!s && s.uncategorized > 0 && (
+        <p className="mb-4 flex items-center gap-2 text-[13px] text-muted">
+          <span className="flex-1">{t('overview.firstTip')}</span>
+          <button type="button" aria-label={t('overview.closeTip')} className="rounded p-1 hover:bg-surface-2 hover:text-text" onClick={() => void updatePrefs({ firstTipDone: true })}>
+            <X size={14} />
+          </button>
+        </p>
+      )}
+      <div className="grid grid-cols-1 gap-4 @[560px]:grid-cols-3">
         <Stat label={t('overview.income')} value={money(s?.incomeCents ?? 0)} />
         <Stat label={t('overview.spending')} value={money(s?.spendingCents ?? 0)} />
         <Stat
@@ -113,12 +145,12 @@ export function Overview({ go }: { go: (p: Page, filter?: Record<string, unknown
         >
           <Tags size={15} className="text-accent" />
           {t('overview.uncategorized', { count: s.uncategorized })}
-          <span className="ml-auto font-medium text-accent">{t('overview.review')}</span>
+          <span className="ml-auto font-medium text-accent">{t('overview.categorise')}</span>
         </button>
       )}
 
-      <div className="mt-4 grid grid-cols-5 gap-4">
-        <Card className="col-span-3">
+      <div className="mt-4 grid grid-cols-1 gap-4 @[720px]:grid-cols-5">
+        <Card className="@[720px]:col-span-3">
           <CardHeader title={t('overview.byCategory')} description={monthLabel(toDate(month), fmt)} />
           {s && s.byCategory.length > 0 ? (
             <div className="px-5 py-4">
@@ -129,7 +161,7 @@ export function Overview({ go }: { go: (p: Page, filter?: Record<string, unknown
           )}
         </Card>
         {!allDone ? (
-          <Card className="col-span-2">
+          <Card className="@[720px]:col-span-2">
             <CardHeader title={t('overview.getStarted')} description={t('overview.getStartedHint')} />
             <ol className="flex flex-col">
               {steps.map((st, i) => (
@@ -141,15 +173,15 @@ export function Overview({ go }: { go: (p: Page, filter?: Record<string, unknown
                     <p className={cx('text-[13px] font-medium', st.done && 'text-muted line-through decoration-border-strong')}>{st.title}</p>
                     <p className="text-xs text-muted">{st.body}</p>
                   </div>
-                  {!st.done && <Button size="sm" variant="ghost" onClick={() => { if (st.tab) openSettingsTab(st.tab); go(st.page) }}>{t('overview.open')}</Button>}
+                  {!st.done && <Button size="sm" variant="ghost" onClick={st.open}>{st.label}</Button>}
                 </li>
               ))}
             </ol>
           </Card>
         ) : (
-          <Card className="col-span-2">
-            <CardHeader title={t('overview.accounts')} />
-            {(accounts.data ?? []).filter((a) => !a.archived).map((a) => (
+          <Card className="@[720px]:col-span-2">
+            <CardHeader title={t('overview.accounts')} action={<Button size="sm" variant="ghost" onClick={() => go('accounts')}>{t('accounts.allAccounts')}</Button>} />
+            {accounts.filter((a) => !a.archived).map((a) => (
               <div key={a.id} className="flex items-center justify-between border-b border-border px-5 py-3 text-[13px] last:border-b-0">
                 <span className="truncate">{a.name}</span>
                 <span className="text-right">
@@ -177,7 +209,15 @@ export function Overview({ go }: { go: (p: Page, filter?: Record<string, unknown
           )}
         </div>
       </Card>
-    </>
+      <AccountModal
+        account={addingAccount ? 'new' : null}
+        onClose={() => setAddingAccount(false)}
+        onSaved={() => {
+          setAddingAccount(false)
+          reloadAccounts()
+        }}
+      />
+    </div>
   )
 }
 

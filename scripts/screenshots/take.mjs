@@ -63,7 +63,7 @@ const SHOTS = [
   { name: 'budgets', run: nav('budgets') },
   { name: 'fixed-costs', run: nav('recurring') },
   { name: 'goals', run: nav('goals') },
-  { name: 'net-worth', run: nav('networth') },
+  { name: 'net-worth', run: nav('accounts') },
   { name: 'year', run: nav('year') },
   { name: 'import-csv', import: 'csv', run: nav('import') },
   { name: 'import-pdf', import: 'pdf', run: nav('import') },

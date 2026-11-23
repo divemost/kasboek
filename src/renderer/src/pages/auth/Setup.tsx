@@ -1,7 +1,7 @@
 import { ArrowLeft, FileLock2, KeyRound, ShieldCheck } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Button } from '../../components/ui'
+import { Button, FormError } from '../../components/ui'
 import { useToast } from '../../components/Toast'
 import { call } from '../../lib/api'
 import { useAuth } from '../../lib/auth'
@@ -40,6 +40,7 @@ export function Setup() {
   const [pw, setPw] = useState({ a: '', b: '' })
   const [recoveryKey, setRecoveryKey] = useState('')
   const [busy, setBusy] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
 
   // Windows Hello may have been switched on (or was busy) after Kasboek looked: check again on return.
   // Not once an account exists: the refresh would then show the app and skip the recovery key check.
@@ -52,6 +53,7 @@ export function Setup() {
 
   const create = (input: { mode: 'password'; password: string } | { mode: 'device' }): void => {
     setBusy(true)
+    setCreateError(null)
     // Before the call: the main process unlocks and may broadcast before the answer arrives.
     setSetupFlowActive(true)
     void call('auth.setup', input)
@@ -61,7 +63,7 @@ export function Setup() {
       })
       .catch((e) => {
         setSetupFlowActive(false)
-        toast(errText(e), 'error')
+        setCreateError(errText(e))
       })
       .finally(() => setBusy(false))
   }
@@ -73,7 +75,7 @@ export function Setup() {
     )
 
   const back = (
-    <button type="button" onClick={() => setStep('choose')} className="mb-3 inline-flex items-center gap-1 text-[13px] text-muted hover:text-text">
+    <button type="button" onClick={() => { setCreateError(null); setStep('choose') }} className="mb-3 inline-flex items-center gap-1 text-[13px] text-muted hover:text-text">
       <ArrowLeft size={14} /> {t('auth.back')}
     </button>
   )
@@ -83,7 +85,7 @@ export function Setup() {
       {step === 'choose' && (
         <AuthCard title={t('auth.welcome')} body={status.legacyData ? t('auth.welcomeLegacy') : t('auth.welcomeBody')}>
           <div className="flex flex-col gap-2.5">
-            <Choice icon={<KeyRound size={16} />} title={t('auth.choosePassword')} body={t('auth.choosePasswordBody')} onClick={() => setStep('password')} />
+            <Choice icon={<KeyRound size={16} />} title={t('auth.choosePassword')} body={t('auth.choosePasswordBody')} onClick={() => { setCreateError(null); setStep('password') }} />
             <Choice
               icon={<DeviceIcon kind={status.device} />}
               title={status.device ? t('auth.chooseDevice', { name: deviceName }) : t('auth.choosePasswordless')}
@@ -100,8 +102,9 @@ export function Setup() {
               }
               onClick={() => create({ mode: 'device' })}
             />
-            <Choice icon={<FileLock2 size={16} />} title={t('auth.chooseImport')} body={t('auth.chooseImportBody')} onClick={() => setStep('import')} />
+            <Choice icon={<FileLock2 size={16} />} title={t('auth.chooseImport')} body={t('auth.chooseImportBody')} onClick={() => { setCreateError(null); setStep('import') }} />
           </div>
+          {createError && <div className="mt-4"><FormError>{createError}</FormError></div>}
           {status.erased.length > 0 && (
             <div className="mt-4 rounded-lg bg-surface-2 px-3 py-2.5">
               <p className="text-[13px] font-medium">{t('auth.restoreErased')}</p>
@@ -142,7 +145,8 @@ export function Setup() {
               }}
             >
               <PasswordFields value={pw} onChange={setPw} autoFocus />
-              <Button type="submit" variant="primary" disabled={!passwordsOk(pw) || busy}>
+              {createError && <FormError>{createError}</FormError>}
+              <Button type="submit" variant="primary" busy={busy} disabled={!passwordsOk(pw)}>
                 {busy ? t('auth.working') : t('auth.createAccount')}
               </Button>
             </form>

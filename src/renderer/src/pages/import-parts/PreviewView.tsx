@@ -2,7 +2,7 @@ import { AlertTriangle, CheckCircle2, Columns3, Sparkles, Square } from 'lucide-
 import { useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { ImportCommitResult, ImportPreview, ImportRow } from '@shared/types'
-import { Badge, Button, Card, PageHeader, Switch, cx } from '../../components/ui'
+import { Badge, Button, Card, Modal, PageHeader, Switch, cx } from '../../components/ui'
 import { useToast } from '../../components/Toast'
 import { parseAmount } from '@shared/amount'
 import { shownText } from '@shared/hide-numbers'
@@ -96,8 +96,18 @@ export function PreviewView({
   const rows = preview.rows.filter((r) => filter === 'all' || r.status === filter)
   // Every row of the file is already in Kasboek: there is nothing to import.
   const allKnown = !!preview.mapping && s.total > 0 && s.ready === 0 && s.duplicates + s.possibleDuplicates + s.skipped === s.total && s.duplicates > 0
+  // Rows or categories changed by hand: leaving the review then asks first.
+  const [edited, setEdited] = useState(false)
+  const [askCancel, setAskCancel] = useState(false)
+  const cancel = (): void => (edited ? setAskCancel(true) : onCancel())
   const update = (changes: Parameters<typeof call<'import.updateRows'>>[1]['changes']): void =>
-    void call('import.updateRows', { sessionId: preview.sessionId, changes }).then(onChange, (e) => toast(errText(e), 'error'))
+    void call('import.updateRows', { sessionId: preview.sessionId, changes }).then(
+      (p) => {
+        setEdited(true)
+        onChange(p)
+      },
+      (e) => toast(errText(e), 'error')
+    )
 
   const xml = preview.xml
   // Only a PDF can have its signs wrong; an XML statement states them, so it is a plain mismatch.
@@ -175,7 +185,7 @@ export function PreviewView({
         }
         action={
           <div className="flex gap-2">
-            <Button variant={allKnown ? 'primary' : undefined} onClick={onCancel}>{allKnown ? t('import.discard') : t('settings.cancel')}</Button>
+            <Button variant={allKnown ? 'primary' : undefined} onClick={cancel}>{allKnown ? t('import.discard') : t('settings.cancel')}</Button>
             {!allKnown && <Button variant="primary" disabled={!s.ready || busy} onClick={() => { setBusy(true); void call('import.commit', { sessionId: preview.sessionId, saveProfile }).then((r) => { toast(t('import.done', { count: r.imported })); onCommitted(r) }, (e) => toast(errText(e), 'error')).finally(() => setBusy(false)) }}>
               {t('import.commit', { count: s.ready })}
             </Button>}
@@ -251,7 +261,7 @@ export function PreviewView({
           <p><AlertTriangle size={15} className="mr-2 inline text-warning" />{t('import.pdf.noTable')}{!assistantEnabled && <> {t('import.pdf.askBank')}</>}</p>
           {notes.length > 0 && <ul className="mt-3 list-disc space-y-0.5 pl-5">{notes.map((n, i) => <li key={i}>{n}</li>)}</ul>}
           <div className="mt-4 flex flex-wrap items-center gap-2">
-            <Button variant={onAssistPdf ? undefined : 'primary'} onClick={onCancel} disabled={aiRunning}>{t('import.pdf.chooseAnother')}</Button>
+            <Button variant={onAssistPdf ? undefined : 'primary'} onClick={cancel} disabled={aiRunning}>{t('import.pdf.chooseAnother')}</Button>
             {aiRead}
           </div>
         </Card>
@@ -271,6 +281,7 @@ export function PreviewView({
             </label>
           </div>
           <Card>
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-border text-left text-[12px] text-muted">
@@ -323,6 +334,7 @@ export function PreviewView({
                 ))}
               </tbody>
             </table>
+            </div>
           </Card>
           {rows.length > limit && <div className="mt-4 flex justify-center"><Button onClick={() => setLimit((l) => l + 500)}>{t('transactions.more')}</Button></div>}
         </>
@@ -349,6 +361,15 @@ export function PreviewView({
       )}
       {assistantEnabled && <CheckConsentModal open={checkConsentOpen} preview={preview} onClose={() => setCheckConsentOpen(false)} onSend={() => { setCheckConsentOpen(false); onAssist?.(preview, true, () => undefined) }} />}
       {assistantEnabled && <PdfConsentModal open={consentOpen} preview={preview} onClose={() => setConsentOpen(false)} onSend={() => { setConsentOpen(false); onAssistPdf?.(preview) }} />}
+      <Modal open={askCancel} title={t('modal.discard')} onClose={() => setAskCancel(false)}>
+        <div className="flex flex-col gap-4">
+          <p className="text-[13px]">{t('modal.discardAsk')}</p>
+          <div className="flex justify-end gap-2">
+            <Button onClick={() => setAskCancel(false)}>{t('modal.keepEditing')}</Button>
+            <Button variant="danger" onClick={onCancel}>{t('modal.discard')}</Button>
+          </div>
+        </div>
+      </Modal>
       {!noTable && <MappingModal key={JSON.stringify(preview.mapping)} open={mappingOpen} preview={preview} onClose={() => setMappingOpen(false)} onApplied={(p) => { onChange(p); setMappingOpen(false) }} />}
     </>
   )

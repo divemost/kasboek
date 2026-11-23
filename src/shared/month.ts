@@ -20,3 +20,10 @@ export function monthRange(month: string): { from: string; to: string } {
   const next = addMonths(month, 1)
   return { from: `${month}-01`, to: `${next}-01` }
 }
+
+/** The newest of some booking dates (YYYY-MM-DD, in any order); anything that is not such a date is ignored. null when there is none. */
+export function latestDate(dates: readonly (string | null | undefined)[]): string | null {
+  let latest: string | null = null
+  for (const d of dates) if (d && /^\d{4}-\d{2}-\d{2}$/.test(d) && (latest === null || d > latest)) latest = d
+  return latest
+}

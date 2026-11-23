@@ -30,7 +30,7 @@ See [PLAN.md](PLAN.md) for the design, the security model and what still needs t
   </tr>
   <tr>
     <td align="center" width="33%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/goals-dark.png"><img src="docs/screenshots/goals-light.png" alt="Kasboek Savings goals page with progress bars and the amount to set aside per month" width="280"></picture><br><sub>Savings goals</sub></td>
-    <td align="center" width="33%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/net-worth-dark.png"><img src="docs/screenshots/net-worth-light.png" alt="Kasboek Net worth page with a chart of net worth per month and the totals owned and owed" width="280"></picture><br><sub>Net worth over time</sub></td>
+    <td align="center" width="33%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/net-worth-dark.png"><img src="docs/screenshots/net-worth-light.png" alt="Kasboek Accounts page with a chart of net worth per month and the totals owned and owed" width="280"></picture><br><sub>Net worth over time</sub></td>
     <td align="center" width="33%"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/year-dark.png"><img src="docs/screenshots/year-light.png" alt="Kasboek Year page with a bar chart of income and spending per month" width="280"></picture><br><sub>Year view: months side by side</sub></td>
   </tr>
   <tr>

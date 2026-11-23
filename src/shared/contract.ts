@@ -103,7 +103,9 @@ export const contract = {
         welcomeDone: z.boolean(),
         graphics: z.enum(GRAPHICS_CHOICES),
         keepInTray: z.boolean(),
-        insights: z.boolean()
+        insights: z.boolean(),
+        firstTipDone: z.boolean(),
+        assistantOpen: z.boolean().nullable()
       })
       .partial()
       .strict(),

@@ -1,17 +1,27 @@
 Kasboek — a private, local-first budget app with an AI assistant built in. Your data stays on your computer, encrypted and locked to your computer and login.
 
-## What’s new in 0.22.3
+## What’s new in 0.23.0
 
-Everything in 0.22.2 is included.
+Everything in 0.22.3 is included. **This is the last Kasboek version with new features.** The new native app (Finora) comes next. Kasboek itself will from now on only get security fixes.
+
+**New**
+- **Accounts page** (replaces Net worth): all your accounts and your net worth in one place. Add, edit and archive accounts there; accounts are no longer in Settings. You can also add an account right where you need it, for example when importing or on the Transactions page.
+- **Get started screen**: when Kasboek has no data yet, it offers three ways to begin: import a bank file, add your accounts by hand, or restore a backup.
+- **Import button in the top bar**, so importing is one click away from every page.
+- **New look**: Playfair Display for titles and buttons, Lato for text and numbers, and a new app icon (a serif K).
+
+**Better**
+- Small windows and zoom: on a narrow window the assistant panel now floats over the page instead of squeezing it, and Kasboek remembers whether you had it open.
+- Safer dialogs: the dialog with your new recovery key can no longer be closed by accident, errors are shown inside the dialog, the keyboard focus stays inside an open dialog, and a double click no longer creates duplicates.
+- Easier to read and use with a keyboard or screen reader: better contrast and clearer labels.
+- Wording fixes in German, French, Dutch, Spanish and Portuguese.
+- The example amounts when setting up an account follow your number format.
+- The button in the banner for uncategorised transactions now says what it does.
 
 **Privacy**
-- API keys you entered for the assistant were also written to Kasboek's encrypted activity log; they are removed now and are no longer logged. The same goes for sync passwords. The activity log also no longer keeps account numbers, rule patterns or the text of assistant chats and memory notes.
-If you shared old exports, backups or sync snapshots with others, consider changing your assistant API key and sync password.
+- Nothing changes about where your data goes. The new fonts are part of the app, so Kasboek does not load anything from the internet for its looks. Kasboek only remembers on this computer whether the assistant panel was open.
 
-**Fixes**
-- Kasboek now says clearly why it cannot open its data (the Windows or system key cannot be read, the account file is empty or damaged, or the file is busy) and shows the technical details on request. From that screen you can import a backup or export without erasing anything, because the unreadable files are kept in an "erased" folder, and you can open the data folder or copy a short diagnostic text with file names and sizes only. Saving the account file is now safer, with a flushed write and an automatic safety copy that Kasboek uses on its own if the file ever turns up empty or cut off.
-
-If you have 0.22.2, you get this version through the Update button.
+If you have 0.22.3, you get this version through the Update button.
 
 ## Download
 

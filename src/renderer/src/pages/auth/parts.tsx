@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { DeviceAuthKind } from '@shared/types'
 import { MIN_PASSWORD_LENGTH, checkPassword } from '@shared/password'
-import { Button, Field, Input, PasswordInput, cx } from '../../components/ui'
+import { Button, Field, FormError, Input, PasswordInput, cx } from '../../components/ui'
 import { useToast } from '../../components/Toast'
 import { ApiError, call } from '../../lib/api'
 import { errorMessage } from '../../lib/error-message'
@@ -142,13 +142,10 @@ export function TotpSetup({ onDone, onCancel }: { onDone: () => void; onCancel?:
   const [code, setCode] = useState('')
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
   useEffect(() => {
-    void call('auth.totpBegin').then(setData, (e) => {
-      const text = errText(e)
-      setFailure(text)
-      toast(text, 'error')
-    })
-  }, [toast])
+    void call('auth.totpBegin').then(setData, (e) => setFailure(errText(e)))
+  }, [])
   const view = totpStepView(data ? 'ready' : failure !== null ? 'failed' : 'loading')
   if (view.error) {
     return (
@@ -171,12 +168,13 @@ export function TotpSetup({ onDone, onCancel }: { onDone: () => void; onCancel?:
       onSubmit={(e) => {
         e.preventDefault()
         setBusy(true)
+        setError(null)
         void call('auth.totpEnable', { code })
           .then(() => {
             toast(t('auth.totpEnabled'))
             onDone()
           })
-          .catch((err) => toast(errText(err), 'error'))
+          .catch((err) => setError(errText(err)))
           .finally(() => setBusy(false))
       }}
     >
@@ -192,9 +190,10 @@ export function TotpSetup({ onDone, onCancel }: { onDone: () => void; onCancel?:
         </div>
       </div>
       <Field label={t('auth.totpStep3')}>{(id) => <CodeInput id={id} value={code} onChange={setCode} autoFocus />}</Field>
+      {error && <FormError>{error}</FormError>}
       <div className="flex justify-end gap-2">
         {onCancel && <Button onClick={onCancel}>{t('auth.notNow')}</Button>}
-        <Button type="submit" variant="primary" icon={<Check size={14} />} disabled={code.length !== 6 || busy}>
+        <Button type="submit" variant="primary" icon={<Check size={14} />} busy={busy} disabled={code.length !== 6}>
           {t('auth.totpTurnOn')}
         </Button>
       </div>

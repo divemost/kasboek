@@ -112,7 +112,7 @@ export const coreOps: OpTable = {
       // A value is the market value of an investment; for a bank account it is the bank balance.
       const kind = (db.prepare('SELECT kind FROM accounts WHERE id = ?').get(input.accountId) as { kind: string } | undefined)?.kind
       if (kind && kind !== 'investment')
-        throw new AppError('valuations.bank_account', 'For a bank account, record the balance the bank shows instead (balances.set, or Bank balance in Settings → Accounts).')
+        throw new AppError('valuations.bank_account', 'For a bank account, record the balance the bank shows instead (balances.set, or Bank balance on the Accounts page).')
       return wealth.setValuation(db, input)
     }
   },

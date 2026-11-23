@@ -12,7 +12,7 @@ const big = readFileSync('assets/brand/icon.svg')
 const small = readFileSync('assets/brand/icon-small.svg')
 
 const png = (size) =>
-  sharp(size <= 32 ? small : big, { density: Math.max(72, (72 * size) / 1024) * 4 })
+  sharp(size <= 48 ? small : big, { density: Math.max(72, (72 * size) / 1024) * 4 })
     .resize(size, size)
     .png({ compressionLevel: 9 })
     .toBuffer()

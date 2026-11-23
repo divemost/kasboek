@@ -1,14 +1,16 @@
 import { ArrowLeftRight, Bookmark, Download, PenLine, Plus, Search, Trash2, Wand2 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { parseAmount } from '@shared/amount'
 import { centsToInput } from '@shared/format'
+import { isFirstTransaction } from '@shared/get-started'
 import { addMonths, monthOf } from '@shared/month'
 import type { TransferPair, Category, Transaction } from '@shared/types'
 import type { Page } from '../App'
+import { AccountModal } from '../components/AccountModal'
 import { DateInput } from '../components/DateInput'
 import { PromptModal } from '../components/PromptModal'
-import { Button, Card, EmptyState, Field, Input, Modal, PageHeader, Select, cx } from '../components/ui'
+import { Button, Card, EmptyState, Field, FormError, Input, Modal, PageHeader, Select, cx } from '../components/ui'
 import { useToast } from '../components/Toast'
 import { call, useOp } from '../lib/api'
 import { exportTransactions } from '../lib/export'
@@ -64,16 +66,21 @@ function TxTitle({ tx, onOpen }: { tx: Transaction; onOpen: () => void }) {
   )
 }
 
-export function Transactions({ go, initial }: { go: (p: Page) => void; initial?: TxFilter }) {
+export function Transactions({ go, initial, openNew }: { go: (p: Page, filter?: Record<string, unknown>) => void; initial?: TxFilter; openNew?: number }) {
   const { t } = useTranslation()
   const toast = useToast()
-  const { money, fmt } = useSettings()
+  const { money, fmt, updatePrefs } = useSettings()
   const [filter, setFilter] = useState<TxFilter>(initial ?? {})
   const [searchText, setSearchText] = useState(initial?.search ?? '')
   const [limit, setLimit] = useState(100)
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [asking, setAsking] = useState<'search' | 'rename' | null>(null)
   const [editing, setEditing] = useState<Transaction | 'new' | null>(null)
+  // A new transaction starts on this account: the one just added, or the one a link asked for.
+  const [newAccountId, setNewAccountId] = useState<number | undefined>(openNew)
+  const [addingAccount, setAddingAccount] = useState(false)
+  // Whether the transaction being typed in is the first one ever: followed until the form opens, then kept.
+  const firstEver = useRef<boolean | null>(null)
   const [suggest, setSuggest] = useState<{ pattern: string; categoryId: number; categoryName: string } | null>(null)
   const [transfersOpen, setTransfersOpen] = useState(false)
   const suggestName = useMasked(suggest?.pattern ?? '')
@@ -87,6 +94,12 @@ export function Transactions({ go, initial }: { go: (p: Page) => void; initial?:
     return () => clearTimeout(h)
   }, [searchText])
   useEffect(() => setSelected(new Set()), [filter])
+  useEffect(() => {
+    if (accounts.data && (editing !== 'new' || firstEver.current === null)) firstEver.current = isFirstTransaction(accounts.data)
+  }, [accounts.data, editing])
+  useEffect(() => {
+    if (openNew !== undefined) startNew(openNew)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const months = useMemo(() => Array.from({ length: 24 }, (_, i) => addMonths(monthOf(), -i)), [])
   const items = page.data?.items ?? []
@@ -117,6 +130,10 @@ export function Transactions({ go, initial }: { go: (p: Page) => void; initial?:
   const activeFilter = Object.fromEntries(Object.entries(filter).filter(([, v]) => v !== undefined && v !== ''))
   const current = saved.find((x) => JSON.stringify(x.filter) === JSON.stringify(activeFilter))
 
+  const startNew = (accountId?: number): void => {
+    setNewAccountId(accountId)
+    setEditing('new')
+  }
   const categorize = async (ids: number[], categoryId: number | null, tx?: Transaction): Promise<void> => {
     try {
       await call('transactions.categorize', { ids, categoryId })
@@ -136,7 +153,7 @@ export function Transactions({ go, initial }: { go: (p: Page) => void; initial?:
         action={
           <div className="flex gap-2">
             {(accounts.data ?? []).length > 1 && <Button icon={<ArrowLeftRight size={14} />} onClick={() => setTransfersOpen(true)}>{t('transfers.button')}</Button>}
-            <Button icon={<Plus size={14} />} onClick={() => setEditing('new')} disabled={!accounts.data?.length}>{t('transactions.add')}</Button>
+            <Button icon={<Plus size={14} />} disabled={!accounts.data} onClick={() => (accounts.data?.some((a) => !a.archived) ? startNew() : setAddingAccount(true))}>{t('transactions.add')}</Button>
           </div>
         }
       />
@@ -297,6 +314,7 @@ export function Transactions({ go, initial }: { go: (p: Page) => void; initial?:
             action={!Object.values(filter).some(Boolean) && <Button variant="primary" onClick={() => go('import')}>{t('transactions.goImport')}</Button>}
           />
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-left text-[12px] text-muted">
@@ -347,6 +365,7 @@ export function Transactions({ go, initial }: { go: (p: Page) => void; initial?:
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </Card>
       {page.data && page.data.total > items.length && (
@@ -356,11 +375,26 @@ export function Transactions({ go, initial }: { go: (p: Page) => void; initial?:
       )}
 
       <TransfersModal open={transfersOpen} onClose={() => setTransfersOpen(false)} onPaired={() => void page.reload()} />
+      <AccountModal
+        account={addingAccount ? 'new' : null}
+        intro={t('accounts.firstHint')}
+        onClose={() => setAddingAccount(false)}
+        onSaved={(a) => {
+          setAddingAccount(false)
+          void accounts.reload().then(() => startNew(a.id))
+        }}
+      />
       <TxModal
         tx={editing}
         categories={cats}
-        accounts={(accounts.data ?? []).map((a) => ({ id: a.id, name: a.name }))}
+        accounts={(accounts.data ?? []).map((a) => ({ id: a.id, name: a.name, archived: a.archived }))}
+        accountId={newAccountId}
         onClose={() => setEditing(null)}
+        onCreated={(date) => {
+          if (!firstEver.current) return
+          void updatePrefs({ firstTipDone: false }).catch(() => undefined)
+          toast(t('overview.start.doneTitle'), 'success', { label: t('overview.start.doneAction'), onClick: () => go('overview', { month: date.slice(0, 7) }) })
+        }}
         onSaved={() => {
           setEditing(null)
           void page.reload()
@@ -407,44 +441,61 @@ function ExchangeCost({ txId, onSaved }: { txId: number; onSaved: () => void }) 
   )
 }
 
-function TxModal({ tx, categories, accounts, onClose, onSaved }: { tx: Transaction | 'new' | null; categories: Category[]; accounts: { id: number; name: string }[]; onClose: () => void; onSaved: () => void }) {
+function TxModal({ tx, categories, accounts, accountId, onClose, onSaved, onCreated }: { tx: Transaction | 'new' | null; categories: Category[]; accounts: { id: number; name: string; archived: boolean }[]; accountId?: number; onClose: () => void; onSaved: () => void; onCreated: (bookingDate: string) => void }) {
   const { t } = useTranslation()
   const toast = useToast()
   const isNew = tx === 'new'
   const { fmt } = useSettings()
   const base = tx && tx !== 'new' ? tx : null
+  // Archived accounts are no longer offered, except the one this transaction is already in.
+  const choices = accounts.filter((a) => !a.archived || a.id === base?.accountId)
   const [form, setForm] = useState({ accountId: 0, bookingDate: '', amount: '', description: '', counterpartyName: '', categoryId: null as number | null, notes: '' })
+  // The form as it was opened, so Escape only asks to discard when something was changed.
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [opened, setOpened] = useState<typeof form | null>(null)
+  const dirty = opened !== null && JSON.stringify(form) !== JSON.stringify(opened)
   useEffect(() => {
+    setError(null)
     if (!tx) return
-    setForm({
-      accountId: base?.accountId ?? accounts[0]?.id ?? 0,
+    const initial = {
+      accountId: base?.accountId ?? accountId ?? choices[0]?.id ?? 0,
       bookingDate: base?.bookingDate ?? localToday(),
       amount: base ? centsToInput(base.amountCents, fmt.formats) : '',
       description: base?.description ?? '',
       counterpartyName: base?.counterpartyName ?? '',
       categoryId: base?.categoryId ?? null,
       notes: base?.notes ?? ''
-    })
+    }
+    setForm(initial)
+    setOpened(initial)
   }, [tx]) // eslint-disable-line react-hooks/exhaustive-deps
+  const example = centsToInput(-1250, fmt.formats)
   const cents = parseAmount(form.amount, 'auto', fmt.formats.decimal)
-  const valid = cents !== null && cents !== 0 && form.description.trim() && /^\d{4}-\d{2}-\d{2}$/.test(form.bookingDate)
+  const valid = form.accountId > 0 && cents !== null && cents !== 0 && form.description.trim() && /^\d{4}-\d{2}-\d{2}$/.test(form.bookingDate)
   const save = (): void => {
+    if (busy) return
+    setBusy(true)
+    setError(null)
     const common = { bookingDate: form.bookingDate, amountCents: cents!, description: form.description, counterpartyName: form.counterpartyName || null, categoryId: form.categoryId, notes: form.notes || null }
     const p = isNew ? call('transactions.create', { accountId: form.accountId, ...common }) : call('transactions.update', { id: base!.id, ...common })
-    p.then(onSaved, (e) => toast(errText(e), 'error'))
+    p.then(() => {
+      if (isNew) onCreated(form.bookingDate)
+      onSaved()
+    }, (e) => setError(errText(e))).finally(() => setBusy(false))
   }
   return (
-    <Modal open={!!tx} title={isNew ? t('transactions.add') : t('transactions.edit')} onClose={onClose}>
+    <Modal open={!!tx} title={isNew ? t('transactions.add') : t('transactions.edit')} onClose={onClose} dirty={dirty}>
       <form className="grid grid-cols-2 gap-4" onSubmit={(e) => { e.preventDefault(); if (valid) save() }}>
         {isNew && (
           <div className="col-span-2">
             <Field label={t('transactions.account')}>
-              {(id) => <Select id={id} value={form.accountId} onChange={(e) => setForm({ ...form, accountId: Number(e.target.value) })}>{accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</Select>}
+              {(id) => <Select id={id} value={form.accountId} onChange={(e) => setForm({ ...form, accountId: Number(e.target.value) })}>{choices.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</Select>}
             </Field>
           </div>
         )}
         <Field label={t('transactions.date')}>{(id) => <DateInput id={id} value={form.bookingDate} onChange={(bookingDate) => setForm({ ...form, bookingDate })} />}</Field>
-        <Field label={t('transactions.amount')} hint={t('transactions.amountHint')}>{(id) => <Input id={id} className="num" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder="-12,50" />}</Field>
+        <Field label={t('transactions.amount')} hint={t('transactions.amountHint', { example })}>{(id) => <Input id={id} className="num" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} placeholder={example} />}</Field>
         <div className="col-span-2"><Field label={t('transactions.counterparty')}>{(id) => <MaskedInput id={id} value={form.counterpartyName} onChange={(counterpartyName) => setForm({ ...form, counterpartyName })} />}</Field></div>
         <div className="col-span-2"><Field label={t('transactions.description')}>{(id) => <MaskedInput id={id} value={form.description} onChange={(description) => setForm({ ...form, description })} />}</Field></div>
         <div className="col-span-2">
@@ -465,15 +516,16 @@ function TxModal({ tx, categories, accounts, onClose, onSaved }: { tx: Transacti
             <ExchangeCost txId={base.id} onSaved={onSaved} />
           </div>
         )}
+        {error && <div className="col-span-2"><FormError>{error}</FormError></div>}
         <div className="col-span-2 flex justify-between gap-2">
           {base ? (
-            <Button variant="danger" icon={<Trash2 size={14} />} onClick={() => { if (window.confirm(t('transactions.deleteConfirm', { count: 1 }))) void call('transactions.delete', { ids: [base.id] }).then(onSaved) }}>
+            <Button variant="danger" icon={<Trash2 size={14} />} onClick={() => { if (window.confirm(t('transactions.deleteConfirm', { count: 1 }))) void call('transactions.delete', { ids: [base.id] }).then(onSaved, (e) => setError(errText(e))) }}>
               {t('transactions.delete')}
             </Button>
           ) : <span />}
           <div className="flex gap-2">
             <Button onClick={onClose}>{t('settings.cancel')}</Button>
-            <Button type="submit" variant="primary" disabled={!valid}>{t('settings.save')}</Button>
+            <Button type="submit" variant="primary" disabled={!valid || busy}>{t('settings.save')}</Button>
           </div>
         </div>
       </form>

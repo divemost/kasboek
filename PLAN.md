@@ -12,10 +12,10 @@ A simple, clean, local-first budget app for the desktop, which Claude (and later
 | Language | English UI; every string goes through i18next so more languages are a JSON file away |
 | Banks | Argenta, Hello bank!, Keytrade Bank (plus a generic “other”) |
 | Money | Integer cents, EUR by default, Belgian number/date formats |
-| Look | Dark and light mode with a green accent; Inter (UI) + Source Serif 4 (headings), bundled locally |
+| Look | Dark and light mode with a green accent; Lato (text and numbers, bundled as “Kasboek Sans”) + Playfair Display (titles and buttons, bundled as “Kasboek Display”), both SIL OFL |
 
-Anthropic’s own typefaces are licensed, so the closest free equivalents are used: Inter for text
-(it has tabular numbers, so amounts line up) and Source Serif 4 for page titles.
+Anthropic’s own typefaces are licensed, so free ones are used: Lato for text and numbers (amounts line up
+with tabular figures) and Playfair Display for page titles and buttons. Both are renamed per their Reserved Font Names.
 
 ## Architecture
 

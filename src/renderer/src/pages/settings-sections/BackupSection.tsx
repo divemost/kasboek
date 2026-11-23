@@ -4,11 +4,12 @@ import { useTranslation } from 'react-i18next'
 import { type PickedTransfer } from '@shared/types'
 import { Badge, Button, Card, CardHeader, Modal, Switch } from '../../components/ui'
 import { useToast } from '../../components/Toast'
-import { ApiError, call, useOp } from '../../lib/api'
+import { call, useOp } from '../../lib/api'
 import { useAuth } from '../../lib/auth'
 import { formatDateTime } from '../../lib/format'
 import { useSettings } from '../../lib/settings'
 import { ImportFlow } from '../auth/ImportFlow'
+import { errText } from '../auth/parts'
 import { Row } from './Row'
 
 export function BackupSection() {
@@ -26,7 +27,7 @@ export function BackupSection() {
     try {
       await fn()
     } catch (e) {
-      toast(e instanceof ApiError ? e.message : String(e), 'error')
+      toast(errText(e), 'error')
     } finally {
       void status.reload()
       void list.reload()
