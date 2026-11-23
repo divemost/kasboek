@@ -131,7 +131,7 @@ export function Tour({ go, openAssistant }: { go: (p: Page) => void; openAssista
             <X size={14} />
           </button>
         </div>
-        <h2 ref={heading} tabIndex={-1} className="mt-1 font-serif outline-none text-[17px] font-medium">{t(`nav.${current.id}`)}</h2>
+        <h2 ref={heading} tabIndex={-1} className="mt-1 font-sans outline-none text-[17px] font-semibold">{t(`nav.${current.id}`)}</h2>
         <p className="mt-1 text-[13px] text-muted">{t(`tour.step.${!assistantEnabled && (current.id === 'import' || current.id === 'settings') ? `${current.id}Local` : current.id}`)}</p>
         <div className="mt-4 flex items-center justify-between gap-2">
           <button type="button" className="text-[13px] text-muted hover:text-text" onClick={close}>{t('tour.skip')}</button>

@@ -22,7 +22,7 @@ export function AuthLayout({ children, wide }: { children: ReactNode; wide?: boo
 export function AuthCard({ title, body, children }: { title: ReactNode; body?: ReactNode; children: ReactNode }) {
   return (
     <div className="rounded-xl border border-border bg-surface p-6">
-      <h1 className="font-serif text-[22px] leading-tight font-medium">{title}</h1>
+      <h1 className="font-serif text-[22px] leading-tight font-semibold">{title}</h1>
       {body && <p className="mt-1.5 text-[13px] text-muted">{body}</p>}
       <div className="mt-5">{children}</div>
     </div>

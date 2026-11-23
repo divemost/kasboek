@@ -89,7 +89,7 @@ export function GetStarted({ go, accounts }: { go: (p: Page, filter?: Record<str
             {[0, 1, 2].map((i) => <div key={i} className="w-[120px] border-t border-border" />)}
           </div>
         </div>
-        <h1 id={titleId} ref={title} tabIndex={-1} className="mt-5 text-left font-serif text-2xl font-medium tracking-[-0.01em] outline-none @[34rem]:text-center @[34rem]:text-[30px]">{t('overview.start.title')}</h1>
+        <h1 id={titleId} ref={title} tabIndex={-1} className="mt-5 text-left font-serif text-2xl font-semibold @[34rem]:font-medium tracking-[-0.01em] outline-none @[34rem]:text-center @[34rem]:text-[30px]">{t('overview.start.title')}</h1>
         <p className="mt-2 text-left text-sm text-muted @[34rem]:text-center">{t('overview.start.subtitle')}</p>
 
         <div className="mt-8">

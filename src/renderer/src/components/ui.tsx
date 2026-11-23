@@ -39,7 +39,7 @@ export function Button({
         else onClick?.(e)
       }}
       className={cx(
-        'inline-flex items-center justify-center gap-2 rounded-lg font-serif font-medium lining-nums whitespace-nowrap transition-colors disabled:cursor-not-allowed disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50',
+        'inline-flex items-center justify-center gap-2 rounded-lg font-sans font-semibold lining-nums whitespace-nowrap transition-colors disabled:cursor-not-allowed disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50',
         size === 'sm' ? 'h-8 px-3 text-[13px]' : 'h-9 px-4 text-sm',
         variant === 'primary' && 'bg-accent text-accent-fg hover:bg-accent-hover',
         variant === 'secondary' && 'border border-border bg-surface text-text hover:bg-surface-2',

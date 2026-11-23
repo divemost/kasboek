@@ -185,7 +185,7 @@ export function ImportPage({ go }: { go: (p: Page, filter?: Record<string, unkno
             <>
               <div className="flex items-center gap-2.5">
                 <Check size={20} strokeWidth={2.5} aria-hidden="true" className="text-accent" />
-                <h2 className="font-serif text-[22px] font-medium">{t('overview.start.doneTitle')}</h2>
+                <h2 className="font-serif text-[22px] font-semibold">{t('overview.start.doneTitle')}</h2>
               </div>
               <p id="import-done-body" className="mt-1 pl-[30px] text-muted">{t('overview.start.doneBody', { count: done.imported, account: (accounts.data ?? []).find((a) => a.id === done.accountId)?.name ?? '' })}</p>
               <div ref={doneActions} className="mt-4 flex flex-wrap gap-2 pl-[30px]">

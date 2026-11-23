@@ -1,6 +1,6 @@
 @import 'tailwindcss';
 
-/* Kasboek Display (Playfair Display) for titles and buttons, Kasboek Sans (Lato) for text and numbers: both SIL OFL, renamed per the Reserved Font Names, bundled here. */
+/* Kasboek Display (Playfair Display) for large titles (22 px and up), Kasboek Sans (Lato) for everything smaller: text, buttons and numbers: both SIL OFL, renamed per the Reserved Font Names, bundled here. */
 @font-face {
   font-family: 'Kasboek Display';
   font-weight: 500;
