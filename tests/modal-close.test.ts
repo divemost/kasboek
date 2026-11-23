@@ -24,3 +24,22 @@ describe('closing a dialog', () => {
     }
   })
 })
+
+describe('Tab inside a dialog', () => {
+  it('wraps from the last control to the first and back', async () => {
+    const { tabWrap } = await import('@shared/modal-close')
+    expect(tabWrap(2, 3, false)).toBe('first')
+    expect(tabWrap(0, 3, true)).toBe('last')
+  })
+  it('lets the browser move between controls in the middle', async () => {
+    const { tabWrap } = await import('@shared/modal-close')
+    expect(tabWrap(1, 3, false)).toBeNull()
+    expect(tabWrap(1, 3, true)).toBeNull()
+  })
+  it('pulls focus in when it is on the dialog itself or outside', async () => {
+    const { tabWrap } = await import('@shared/modal-close')
+    expect(tabWrap(-1, 3, false)).toBe('first')
+    expect(tabWrap(-1, 3, true)).toBe('last')
+    expect(tabWrap(-1, 0, false)).toBeNull()
+  })
+})

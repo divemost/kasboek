@@ -225,9 +225,9 @@ export function RecurringPage({ go }: { go: (p: Page, filter?: Record<string, un
   return (
     <>
       <PageHeader title={t('recurring.title')} subtitle={`${t('recurring.subtitle')} ${t('recurring.hint')}`} />
-      <div className="grid grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 @[560px]:grid-cols-3">
         <Stat label={t('recurring.perMonth')} value={r ? money(r.monthlyOutCents) : '—'} />
-        <Stat label={t('recurring.due')} value={r ? money(r.dueThisMonthCents) : '—'} tone={r && r.dueThisMonthCents > 0 ? 'negative' : undefined} />
+        <Stat label={t('recurring.due')} value={r ? money(r.dueThisMonthCents) : '—'} tone={r?.items.some((i) => i.direction === 'out' && i.status === 'late') ? 'negative' : undefined} />
         <Stat label={t('recurring.incomePerMonth')} value={r ? money(r.monthlyInCents) : '—'} tone="accent" />
       </div>
       {r && r.items.length === 0 && justHidden.length === 0 ? (

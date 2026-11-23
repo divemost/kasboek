@@ -1,20 +1,17 @@
 import { Download, Upload } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Button, Card, CardHeader, Modal } from '../../components/ui'
+import { RestoreModal } from '../../components/RestoreModal'
+import { Button, Card, CardHeader } from '../../components/ui'
 import { useToast } from '../../components/Toast'
 import { call } from '../../lib/api'
-import { useAuth } from '../../lib/auth'
-import { ImportFlow } from '../auth/ImportFlow'
 import { errText } from '../auth/parts'
 import { Row } from './Row'
 
 export function TransferSection() {
   const { t } = useTranslation()
   const toast = useToast()
-  const { set } = useAuth()
   const [importing, setImporting] = useState(false)
-  const [notice, setNotice] = useState(false)
   return (
     <Card>
       <CardHeader title={t('transfer.title')} description={t('transfer.hint')} />
@@ -31,9 +28,7 @@ export function TransferSection() {
       <Row label={t('transfer.import')} hint={t('transfer.importHint')}>
         <Button size="sm" icon={<Upload size={14} />} onClick={() => setImporting(true)}>{t('transfer.importButton')}</Button>
       </Row>
-      <Modal open={importing} title={t('transfer.import')} onClose={() => setImporting(false)} dismissible={!notice}>
-        {importing && <ImportFlow replacing onNotice={setNotice} onCancel={() => setImporting(false)} onDone={(s) => { setImporting(false); set(s); window.location.reload() }} />}
-      </Modal>
+      <RestoreModal open={importing} onClose={() => setImporting(false)} />
     </Card>
   )
 }

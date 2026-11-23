@@ -5,6 +5,7 @@
  */
 import { randomUUID } from 'node:crypto'
 import type { CheckPart, CheckSummary, ImportBatch, ImportCommitResult, ImportPreview, ImportRow, PdfNote, Reconciliation, XmlNote } from '@shared/types'
+import { latestDate } from '@shared/month'
 import type { Db } from './database'
 import { AppError } from './errors'
 import { categorizeTransactions, createRule, insertTransaction, listRules, matchRule } from './finance'
@@ -666,8 +667,7 @@ export function commit(db: Db, id: string, saveProfile: boolean): ImportCommitRe
   const found = ids.length ? findTransfers(db, { onlyIds: ids }) : []
   const transfersPaired = pairTransfers(db, found.filter((f) => f.confidence === 'iban')).paired
   const transfersSuggested = found.filter((f) => f.confidence === 'amount').length
-  const dates = built.flatMap((b) => (b.row.bookingDate ? [b.row.bookingDate] : [])).sort()
-  const lastDate = dates.at(-1) ?? null
+  const lastDate = latestDate(built.map((b) => b.row.bookingDate))
   const kind = (db.prepare('SELECT kind FROM accounts WHERE id = ?').get(s.accountId) as { kind: string }).kind
   // A balance column: the balance after the last transaction of the file is what the bank showed
   // that day, so it is recorded (and compared with what Kasboek expected).

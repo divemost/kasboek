@@ -2,6 +2,7 @@ import { AlertTriangle, CheckCircle2, Landmark, Trash2 } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { parseAmount } from '@shared/amount'
+import { centsToInput } from '@shared/format'
 import type { BankBalanceResult } from '@shared/types'
 import { errText } from '../pages/auth/parts'
 import { call, useOp } from '../lib/api'
@@ -39,9 +40,10 @@ export function BalanceVerdict({ result, currency, since }: { result: Pick<BankB
 /** Amount and date fields for "the balance your bank shows". */
 export function BalanceFields({ value, date, currency, onValue, onDate, dateLabel = true }: { value: string; date: string; currency: string; onValue: (v: string) => void; onDate: (d: string) => void; dateLabel?: boolean }) {
   const { t } = useTranslation()
+  const { fmt } = useSettings()
   return (
     <div className="grid grid-cols-2 gap-3">
-      <Field label={t('balance.amount', { currency })}>{(id) => <Input id={id} inputMode="decimal" className="num" value={value} onChange={(e) => onValue(e.target.value)} placeholder="0,00" />}</Field>
+      <Field label={t('balance.amount', { currency })}>{(id) => <Input id={id} inputMode="decimal" className="num" value={value} onChange={(e) => onValue(e.target.value)} placeholder={centsToInput(0, fmt.formats)} />}</Field>
       <Field label={dateLabel ? t('balance.onDate') : ''}>{(id) => <DateInput id={id} max={today()} value={date} onChange={onDate} />}</Field>
     </div>
   )
@@ -145,7 +147,7 @@ export function ImportBalanceCheck({ accountId, currency, date, kasboekCents, as
     return (
       <p className="mt-2 text-[13px] text-muted">
         {t('balance.kasboekOn', { date: day, amount: money(kasboekCents, currency) })}{' '}
-        <button type="button" className="font-medium text-accent hover:underline" onClick={() => setOpen(true)}>{t('balance.compare')}</button>
+        <button type="button" className="font-medium text-accent-hover hover:underline" onClick={() => setOpen(true)}>{t('balance.compare')}</button>
       </p>
     )
   return (

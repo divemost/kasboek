@@ -271,6 +271,10 @@ export interface Prefs {
   insights: boolean
   /** Set by Kasboek when the graphics card failed to show its window; "automatic" then draws in software. */
   graphicsFailed: boolean
+  /** Nothing is waiting for the one-time tip on the Overview (give uncategorised transactions a category): it was closed, or there was no first import or transaction to follow up. Set to false by the first import or manual transaction. */
+  firstTipDone: boolean
+  /** The assistant panel was left open (true) or closed (false); null = never chosen, then it is open only when the assistant is on. */
+  assistantOpen: boolean | null
 }
 
 /** How the update for this computer is installed. */

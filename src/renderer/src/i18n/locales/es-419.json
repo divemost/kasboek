@@ -3,7 +3,18 @@
     "settings": "Configuración"
   },
   "overview": {
-    "stepAccounts": "Agrega tus cuentas bancarias"
+    "stepAccounts": "Agrega tus cuentas bancarias",
+    "add": "Agregar",
+    "start": {
+      "manualTitle": "Agregar a mano",
+      "needAccount": "Agrega primero la cuenta a la que pertenece.",
+      "restoreTitle": "Restaurar una copia o cambiar de computadora",
+      "restoreBody": "Abre una copia o exportación .kasboek. Esto reemplaza lo que hay aquí.",
+      "privacy": "Todo se queda en esta computadora, cifrado.",
+      "privacyCloud": "Tus datos se quedan cifrados en esta computadora. Cuando le preguntas algo al asistente, tu pregunta y los datos que necesita se envían a {{aiCompany}}; los números de cuenta se ocultan.",
+      "addAccount": "Agregar cuenta",
+      "accountAdded": "{{name}} agregada"
+    }
   },
   "transactions": {
     "add": "Agregar movimiento",
@@ -17,7 +28,6 @@
   },
   "import": {
     "needAccount": "Agrega primero la cuenta bancaria, para que Kasboek sepa a dónde pertenecen estos movimientos.",
-    "addAccount": "Agregar una cuenta",
     "noMapping": "Kasboek no pudo saber qué columnas tienen la fecha y el monto. Elígelas en Columnas.",
     "issue": {
       "amount_invalid": "monto ilegible",
@@ -157,7 +167,7 @@
     "stopConfirm": "Esta computadora deja de enviar y recibir cambios. Sus datos se quedan como están. Para volver a sincronizar, únete de nuevo a la carpeta."
   },
   "balance": {
-    "why": "Así Kasboek conoce el saldo de esta cuenta y se da cuenta cuando falta un movimiento. También puedes agregarlo más tarde en Configuración → Cuentas."
+    "why": "Así Kasboek conoce el saldo de esta cuenta y se da cuenta cuando falta un movimiento. También puedes agregarlo más tarde en la página Cuentas."
   },
   "transfers": {
     "hint": "Dinero que sale de una de tus cuentas y el mismo monto que entra en otra en 3 días. Emparejadas, ambas mitades cuentan como traspaso: ni ingreso ni gasto.",
@@ -211,12 +221,16 @@
     "step": {
       "budgets": "Fija un monto por categoría y mes y ve cuánto queda. Las reglas que clasifican los movimientos automáticamente también están aquí.",
       "goals": "Ahorra para algo: un monto para una fecha, con lo que debes apartar cada mes.",
-      "settings": "Cuentas, copias de seguridad, sincronización entre computadoras, el asistente, formatos y más.",
-      "settingsLocal": "Cuentas, copias de seguridad, sincronización entre computadoras, formatos y más."
+      "settings": "Copias de seguridad, sincronización entre computadoras, el asistente, formatos y más.",
+      "settingsLocal": "Copias de seguridad, sincronización entre computadoras, formatos y más.",
+      "accounts": "Tus cuentas y sus saldos, y tu patrimonio a lo largo del tiempo. Agrega una cuenta o revisa un saldo aquí."
     }
   },
   "webdav": {
     "urlHint": "En Nextcloud: Archivos → Configuración (abajo a la izquierda) → WebDAV. Debe empezar por https://, o http:// para un servidor de tu red doméstica.",
     "passwordHint": "Mejor una contraseña de aplicación creada para Kasboek. Se guarda en tus datos cifrados, solo en esta computadora."
+  },
+  "accounts": {
+    "firstHint": "Los movimientos pertenecen a una cuenta. Agrega primero esa cuenta."
   }
 }

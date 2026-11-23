@@ -2,8 +2,7 @@ import { Server } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { errText } from '../pages/auth/parts'
-import { useToast } from './Toast'
-import { Button, Field, Input, Modal, PasswordInput } from './ui'
+import { Button, Field, FormError, Input, Modal, PasswordInput } from './ui'
 
 export interface WebDavInput {
   url: string
@@ -17,10 +16,11 @@ export interface WebDavInput {
  */
 export function WebDavModal({ open, title, submit, onClose, onSubmit }: { open: boolean; title: string; submit: string; onClose: () => void; onSubmit: (w: WebDavInput) => Promise<unknown> }) {
   const { t } = useTranslation()
-  const toast = useToast()
   const [w, setW] = useState<WebDavInput>({ url: '', user: '', password: '' })
   const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const close = (): void => {
+    setError(null)
     setW((x) => ({ ...x, password: '' }))
     onClose()
   }
@@ -31,9 +31,10 @@ export function WebDavModal({ open, title, submit, onClose, onSubmit }: { open: 
         onSubmit={(e) => {
           e.preventDefault()
           setBusy(true)
+          setError(null)
           void onSubmit(w)
             .then(() => close())
-            .catch((err) => toast(errText(err), 'error'))
+            .catch((err) => setError(errText(err)))
             .finally(() => setBusy(false))
         }}
       >
@@ -45,9 +46,10 @@ export function WebDavModal({ open, title, submit, onClose, onSubmit }: { open: 
         <Field label={t('webdav.password')} hint={t('webdav.passwordHint')}>
           {(id) => <PasswordInput id={id} value={w.password} onChange={(e) => setW({ ...w, password: e.target.value })} autoComplete="current-password" />}
         </Field>
+        {error && <FormError>{error}</FormError>}
         <div className="mt-1 flex justify-end gap-2">
           <Button type="button" onClick={close} disabled={busy}>{t('settings.cancel')}</Button>
-          <Button type="submit" variant="primary" icon={<Server size={14} />} disabled={busy || !w.url.trim()}>{busy ? t('webdav.connecting') : submit}</Button>
+          <Button type="submit" variant="primary" icon={<Server size={14} />} busy={busy} disabled={!w.url.trim()}>{busy ? t('webdav.connecting') : submit}</Button>
         </div>
       </form>
     </Modal>

@@ -1,8 +1,8 @@
 import { FileLock2, FolderSync, Server } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { AuthStatus, ImportReset, PickedTransfer } from '@shared/types'
-import { Button, Field, Input, PasswordInput } from '../../components/ui'
+import { Button, Field, FormError, Input, PasswordInput } from '../../components/ui'
 import { useToast } from '../../components/Toast'
 import { WebDavModal } from '../../components/WebDav'
 import { ApiError, call } from '../../lib/api'
@@ -35,14 +35,27 @@ export function ImportFlow({
   const [recoveryKey, setRecoveryKey] = useState('')
   const [newPw, setNewPw] = useState({ a: '', b: '' })
   const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [dav, setDav] = useState(false)
   // Set after an import that left some settings out: shown until the user continues.
   const [done, setDone] = useState<{ status: AuthStatus; reset: ImportReset[] } | null>(null)
-  // A chosen sync folder leaves a downloaded copy behind until it is imported or dropped.
-  const cancel = (): void => {
-    if (picked) void call('sync.cancelJoin', { token: picked.token }).catch(() => undefined)
-    onCancel()
-  }
+  // A chosen sync folder leaves a downloaded copy behind until it is imported or dropped. However the dialog goes away
+  // (Cancel, X, Escape, the parent closing it), what was picked and not imported is dropped when this unmounts.
+  const pickedToken = useRef<string | null>(null)
+  pickedToken.current = picked?.token ?? null
+  const imported = useRef(false)
+  const mounted = useRef(false)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+      // Not at once: React's development check unmounts and mounts again, which must not drop what was picked.
+      queueMicrotask(() => {
+        if (!mounted.current && pickedToken.current && !imported.current) void call('sync.cancelJoin', { token: pickedToken.current }).catch(() => undefined)
+      })
+    }
+  }, [])
+  const cancel = onCancel
 
   if (done) {
     return (
@@ -128,12 +141,15 @@ export function ImportFlow({
       onSubmit={(e) => {
         e.preventDefault()
         setBusy(true)
+        setError(null)
         void call('transfer.import', {
           token: picked.token,
           ...(useRecovery ? { recoveryKey } : { password, ...(needsCode ? { code } : {}) }),
           ...(picked.needsNewPassword ? { newPassword: newPw.a } : {})
         })
           .then(({ status, reset }) => {
+            // Imported: nothing is left to drop.
+            imported.current = true
             toast(t('transfer.imported'))
             if (reset.length) {
               onNotice?.(true)
@@ -141,7 +157,7 @@ export function ImportFlow({
             }
             else onDone(status)
           })
-          .catch((err) => toast(errText(err), 'error'))
+          .catch((err) => setError(errText(err)))
           .finally(() => setBusy(false))
       }}
     >
@@ -173,9 +189,10 @@ export function ImportFlow({
         </div>
       )}
       {replacing && <p className="rounded-lg bg-warning-soft px-3 py-2 text-[13px] text-warning">{t('transfer.replaceWarning')}</p>}
+      {error && <FormError>{error}</FormError>}
       <div className="flex justify-end gap-2">
         <Button onClick={cancel}>{t('settings.cancel')}</Button>
-        <Button type="submit" variant="primary" disabled={!ready || busy}>
+        <Button type="submit" variant="primary" busy={busy} disabled={!ready}>
           {busy ? t('auth.working') : t('transfer.importConfirm')}
         </Button>
       </div>

@@ -1,19 +1,26 @@
 {
   "nav": {
-    "networth": "Patrimônio",
-    "settings": "Configurações"
+    "settings": "Configurações",
+    "importHint": "Importar um arquivo do banco"
   },
   "overview": {
     "stepBackupBody": "Criptografadas, diárias, para a pasta ou unidade que escolher.",
-    "stepImport": "Importe um arquivo CSV",
-    "stepImportBody": "O Kasboek o lê e mostra cada linha antes de salvar o que quer que seja.",
     "review": "Revisar com {{ai}}",
-    "reviewPrompt": "Revise {{month}} comigo (use summary_review para {{iso}}). Como se comparam receitas e despesas com os meses anteriores, que categorias mudaram mais, que orçamentos foram ultrapassados e que pagamentos se destacam? Termine com uma ou duas dicas práticas. Seja breve."
+    "reviewPrompt": "Revise {{month}} comigo (use summary_review para {{iso}}). Como se comparam receitas e despesas com os meses anteriores, que categorias mudaram mais, que orçamentos foram ultrapassados e que pagamentos se destacam? Termine com uma ou duas dicas práticas. Seja breve.",
+    "firstTip": "Dica: atribua uma categoria aos movimentos sem categoria e seus orçamentos se preenchem sozinhos.",
+    "start": {
+      "importBody": "Uma exportação CSV ou um extrato em PDF. O Kasboek mostra cada linha antes de salvar qualquer coisa.",
+      "importAction": "Escolher arquivo…",
+      "restoreBody": "Abra uma cópia ou exportação .kasboek. Isto substitui o que está aqui.",
+      "privacy": "Tudo fica neste computador, criptografado.",
+      "privacyCloud": "Seus dados ficam criptografados neste computador. Quando você pergunta algo ao assistente, sua pergunta e os dados de que ele precisa são enviados para {{aiCompany}}; os números de conta são ocultados.",
+      "accountName": "Nome, p. ex. Conta corrente"
+    }
   },
   "transactions": {
     "emptyBody": "Importe um arquivo CSV do seu banco para começar.",
     "amount": "Valor",
-    "amountHint": "Negativo para dinheiro que sai, ex.: -12,50",
+    "amountHint": "Negativo para dinheiro que sai, ex.: {{example}}",
     "delete": "Excluir",
     "deleteConfirm_one": "Excluir este movimento?",
     "deleteConfirm_other": "Excluir {{count}} movimentos?",
@@ -80,9 +87,9 @@
     "consent": {
       "title": "Verificar este arquivo com {{ai}}",
       "intro": "{{ai}} pode verificar este arquivo: ler as colunas, apontar linhas que parecem erradas e sugerir categorias, nomes legíveis e regras.",
-      "sendsRemote": "Isto envia para {{aiCompany}} os nomes e descrições dos pagamentos deste arquivo e das suas transações ainda sem categoria, as primeiras linhas do arquivo como estão escritas, a lista das suas categorias e regras, e as anotações que o assistente memorizou. Os números de conta e de cartão ficam ocultos.",
-      "sendsLocal": "Isto envia para {{ai}} neste computador ou nesta rede os nomes e descrições dos pagamentos deste arquivo e das suas transações ainda sem categoria, as primeiras linhas do arquivo como estão escritas, a lista das suas categorias e regras, e as anotações que o assistente memorizou. Os números de conta e de cartão ficam ocultos. Nada vai para um serviço online.",
-      "notSent": "Não é enviado: o resto do arquivo, as transações que já têm categoria, as suas outras contas.",
+      "sendsRemote": "Isto envia para {{aiCompany}} os nomes e descrições dos pagamentos deste arquivo e dos seus movimentos ainda sem categoria, as primeiras linhas do arquivo como estão escritas, a lista das suas categorias e regras, e as anotações que o assistente memorizou. Os números de conta e de cartão ficam ocultos.",
+      "sendsLocal": "Isto envia para {{ai}} neste computador ou nesta rede os nomes e descrições dos pagamentos deste arquivo e dos seus movimentos ainda sem categoria, as primeiras linhas do arquivo como estão escritas, a lista das suas categorias e regras, e as anotações que o assistente memorizou. Os números de conta e de cartão ficam ocultos. Nada vai para um serviço online.",
+      "notSent": "Não é enviado: o resto do arquivo, os movimentos que já têm categoria, as suas outras contas.",
       "again": "Perguntamos de novo se você trocar de provedor, endereço ou modelo. Nada é salvo antes de você ver o resultado.",
       "stats": "Linhas: {{rows}} · cerca de {{tokens}} tokens · solicitações: {{parts}} · {{address}} · {{model}}",
       "show": "Mostrar exatamente o que é enviado",
@@ -145,7 +152,7 @@
     "accountSaved": "Conta salva.",
     "formatsHint": "Cada parte é definida separadamente. Exemplo: {{value}}",
     "negative": "Valores negativos",
-    "accountKindInvestment": "Registre o valor de vez em quando na página Patrimônio; os aportes e saques vêm dos movimentos.",
+    "accountKindInvestment": "Registre o valor de vez em quando na página Contas; os aportes e saques vêm dos movimentos.",
     "fxCostHint": "Opcional. O que este banco cobra além da taxa de câmbio quando converte dinheiro para outra moeda, ex.: 1,5. Ajuda o Kasboek a reconhecer transferências entre as suas contas em moedas diferentes.",
     "graphics": {
       "nowOff": {
@@ -287,7 +294,7 @@
     "readFromCsv": "Saldo do arquivo no fim de {{date}}: {{amount}}.",
     "saved": "Saldo bancário de {{date}} salvo.",
     "skip": "Pular",
-    "why": "Assim o Kasboek conhece o saldo desta conta e percebe quando falta um movimento. Você também pode adicioná-lo mais tarde em Configurações → Contas."
+    "why": "Assim o Kasboek conhece o saldo desta conta e percebe quando falta um movimento. Você também pode adicioná-lo mais tarde na página Contas."
   },
   "transfers": {
     "hint": "Dinheiro que sai de uma das suas contas e o mesmo valor que entra em outra em 3 dias. Emparelhadas, as duas metades contam como transferência: nem receita nem despesa.",
@@ -415,7 +422,8 @@
       "year": "O ano inteiro por mês e categoria, com exportação CSV e PDF para os impostos ou o contador.",
       "import": "Traga um arquivo CSV ou um extrato em PDF do seu banco. Deixe o assistente verificá-lo antes de salvar.",
       "lock": "Bloqueie o Kasboek quando se ausentar. Também bloqueia sozinho depois de um tempo.",
-      "importLocal": "Traga um arquivo CSV ou um extrato em PDF do seu banco. Nada é salvo até você aprovar."
+      "importLocal": "Traga um arquivo CSV ou um extrato em PDF do seu banco. Nada é salvo até você aprovar.",
+      "accounts": "Suas contas e seus respectivos saldos, e seu patrimônio ao longo do tempo. Adicione uma conta ou confira um saldo aqui."
     }
   },
   "webdav": {
@@ -429,5 +437,8 @@
     "consent": {
       "stats": "Cerca de {{tokens}} tokens · 1 solicitação · {{address}} · {{model}}"
     }
+  },
+  "accounts": {
+    "emptyBody": "Comece pela conta com a qual você mais paga, como a conta corrente. Poupanças, cartões e investimentos podem vir depois."
   }
 }

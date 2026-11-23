@@ -22,7 +22,7 @@ export function applyThemeToDocument(theme: Prefs['theme']): void {
 }
 
 /** Shown when the main process can't answer, so the page still opens (and reports its first screen). */
-const FALLBACK_PREFS: Prefs = { theme: 'system', language: 'en', formats: DEFAULT_FORMATS, autoLockMinutes: 10, updateCheck: true, welcomeDone: true, graphics: 'auto', graphicsFailed: false, keepInTray: false, insights: true }
+const FALLBACK_PREFS: Prefs = { theme: 'system', language: 'en', formats: DEFAULT_FORMATS, autoLockMinutes: 10, updateCheck: true, welcomeDone: true, graphics: 'auto', graphicsFailed: false, keepInTray: false, insights: true, firstTipDone: true, assistantOpen: null }
 const FALLBACK_INFO: AppInfo = { name: 'Kasboek', version: '', commit: '', platform: 'linux', dataDir: '', graphics: { hardware: true, reason: null }, mcpCommand: { command: '', args: [] } }
 
 export function PrefsProvider({ children }: { children: ReactNode }) {

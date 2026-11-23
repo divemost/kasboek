@@ -85,7 +85,7 @@ describe('account numbers in the renderer', () => {
   // Places that handle the field without showing it: the form state that IbanInput edits, the names of
   // the columns to map, and the "statement is for another account" notes, which core already masks.
   const allowed: [string, RegExp][] = [
-    ['pages/settings-sections/AccountsSection.tsx', /iban: /],
+    ['components/AccountModal.tsx', /iban: /],
     ['pages/import-parts/MappingModal.tsx', /FIELDS/],
     ['pages/import-parts/PreviewView.tsx', /iban: n\.iban/]
   ]

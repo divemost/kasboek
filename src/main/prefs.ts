@@ -6,7 +6,7 @@ import { LANGUAGE_CODES, pickLanguage, type LanguageCode } from '@shared/languag
 import type { Prefs, PrefsPatch } from '@shared/types'
 import { paths } from './paths'
 
-export const DEFAULT_PREFS: Prefs = { theme: 'system', language: 'en', formats: DEFAULT_FORMATS, autoLockMinutes: 10, updateCheck: true, welcomeDone: false, graphics: 'auto', graphicsFailed: false, keepInTray: false, insights: true }
+export const DEFAULT_PREFS: Prefs = { theme: 'system', language: 'en', formats: DEFAULT_FORMATS, autoLockMinutes: 10, updateCheck: true, welcomeDone: false, graphics: 'auto', graphicsFailed: false, keepInTray: false, insights: true, firstTipDone: true, assistantOpen: null }
 
 type StoredPrefs = Partial<Omit<Prefs, 'formats'>> & { formats?: Partial<FormatPrefs>; formatLocale?: string }
 

@@ -138,7 +138,7 @@ export function SecuritySection() {
         </form>
       </Modal>
 
-      <Modal open={modal === 'recovery'} title={t('settings.newRecoveryKey')} onClose={close}>
+      <Modal open={modal === 'recovery'} title={t('settings.newRecoveryKey')} onClose={close} dismissible={!newKey}>
         {newKey ? (
           <RecoveryKeyPanel recoveryKey={newKey} onDone={close} />
         ) : (

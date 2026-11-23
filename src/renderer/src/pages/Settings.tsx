@@ -6,7 +6,6 @@ import { useAssistantEnabled } from '../lib/settings'
 import { MemorySection } from './SettingsMemory'
 import { SETTINGS_TABS, onSettingsTab, openSettingsTab, settingsTab, type SettingsTab } from '../lib/settings-tab'
 import { AboutSection } from './settings-sections/AboutSection'
-import { AccountsSection } from './settings-sections/AccountsSection'
 import { AppearanceSection } from './settings-sections/AppearanceSection'
 import { BackupSection } from './settings-sections/BackupSection'
 import { CurrenciesSection } from './settings-sections/CurrenciesSection'
@@ -25,7 +24,8 @@ export function SettingsPage() {
   return (
     <>
       <PageHeader title={t('settings.title')} />
-      <div role="tablist" aria-label={t('settings.title')} className="mb-6 flex gap-1 border-b border-border">
+      <div className="mb-6 overflow-x-auto border-b border-border">
+      <div role="tablist" aria-label={t('settings.title')} className="flex w-max min-w-full gap-1">
         {SETTINGS_TABS.map((id) => (
           <button
             key={id}
@@ -34,13 +34,14 @@ export function SettingsPage() {
             aria-selected={tab === id}
             onClick={() => setTab(id)}
             className={cx(
-              '-mb-px border-b-2 px-3 py-2 text-sm font-medium transition-colors',
+              '-mb-px border-b-2 px-3 py-2 text-sm whitespace-nowrap font-medium transition-colors',
               tab === id ? 'border-accent text-accent' : 'border-transparent text-muted hover:text-text'
             )}
           >
             {t(`settings.tab.${id}`)}
           </button>
         ))}
+      </div>
       </div>
       <div role="tabpanel" className="flex flex-col gap-6">
         {tab === 'general' && (
@@ -52,7 +53,6 @@ export function SettingsPage() {
           </>
         )}
         {tab === 'about' && <AboutSection />}
-        {tab === 'accounts' && <AccountsSection />}
         {tab === 'security' && <SecuritySection />}
         {tab === 'data' && (
           <>

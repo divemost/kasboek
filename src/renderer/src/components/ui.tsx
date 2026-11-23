@@ -1,9 +1,13 @@
 import { createPortal } from 'react-dom'
 import { Eye, EyeOff, X } from 'lucide-react'
-import { useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from 'react'
+import { createContext, useContext, useEffect, useId, useRef, useState, type ButtonHTMLAttributes, type KeyboardEvent as ReactKeyboardEvent, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes } from 'react'
 import { useTranslation } from 'react-i18next'
-import { closeAction, type CloseSource } from '@shared/modal-close'
+import { closeAction, tabWrap, type CloseSource } from '@shared/modal-close'
 import { revealedAfter, type RevealEvent } from '@shared/password-reveal'
+
+const FOCUSABLE = 'a[href], button:not(:disabled), input:not([type="hidden"]):not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])'
+/** The controls of a dialog that can take focus now (not the ones in a hidden part). */
+const focusablesIn = (root: HTMLElement | null): HTMLElement[] => (root ? [...root.querySelectorAll<HTMLElement>(FOCUSABLE)].filter((el) => !el.closest('[hidden]')) : [])
 
 const cx = (...c: (string | false | null | undefined)[]): string => c.filter(Boolean).join(' ')
 
@@ -14,15 +18,28 @@ export function Button({
   size = 'md',
   className,
   icon,
+  busy,
+  onClick,
   children,
   ...rest
-}: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant; size?: 'sm' | 'md'; icon?: ReactNode }) {
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: Variant
+  size?: 'sm' | 'md'
+  icon?: ReactNode
+  /** Looks and reads as disabled and does nothing, but keeps keyboard focus (a disabled button drops it to the page). For a button that was just pressed. */
+  busy?: boolean
+}) {
   return (
     <button
       type="button"
       {...rest}
+      aria-disabled={busy || undefined}
+      onClick={(e) => {
+        if (busy) e.preventDefault()
+        else onClick?.(e)
+      }}
       className={cx(
-        'inline-flex items-center justify-center gap-2 rounded-lg font-medium whitespace-nowrap transition-colors disabled:cursor-not-allowed disabled:opacity-50',
+        'inline-flex items-center justify-center gap-2 rounded-lg font-serif font-medium lining-nums whitespace-nowrap transition-colors disabled:cursor-not-allowed disabled:opacity-50 aria-disabled:cursor-not-allowed aria-disabled:opacity-50',
         size === 'sm' ? 'h-8 px-3 text-[13px]' : 'h-9 px-4 text-sm',
         variant === 'primary' && 'bg-accent text-accent-fg hover:bg-accent-hover',
         variant === 'secondary' && 'border border-border bg-surface text-text hover:bg-surface-2',
@@ -55,7 +72,7 @@ export function CardHeader({ title, description, action }: { title: ReactNode; d
 
 export function PageHeader({ title, subtitle, action }: { title: ReactNode; subtitle?: ReactNode; action?: ReactNode }) {
   return (
-    <header className="mb-8 flex items-end justify-between gap-4">
+    <header className="mb-8 flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
       <div>
         <h1 className="font-serif text-[30px] leading-tight font-medium tracking-[-0.01em]">{title}</h1>
         {subtitle && <p className="mt-1 text-muted">{subtitle}</p>}
@@ -65,24 +82,39 @@ export function PageHeader({ title, subtitle, action }: { title: ReactNode; subt
   )
 }
 
+/** An error shown under the field that caused it; read out by screen readers when it appears. */
+export function FormError({ children, id }: { children: ReactNode; id?: string }) {
+  return (
+    <p id={id} role="alert" className="selectable text-[13px] text-negative">
+      {children}
+    </p>
+  )
+}
+
+/** The id of the hint under the field, so the control in it can point at it (aria-describedby). */
+const HintId = createContext<string | undefined>(undefined)
+const describedBy = (own: string | undefined, hint: string | undefined): string | undefined => [own, hint].filter(Boolean).join(' ') || undefined
+
 export function Field({ label, hint, children }: { label: ReactNode; hint?: ReactNode; children: (id: string) => ReactNode }) {
   const id = useId()
+  const hintId = `${id}-hint`
   return (
     <div className="flex flex-col gap-1.5">
       <label htmlFor={id} className="text-[13px] font-medium">
         {label}
       </label>
-      {children(id)}
-      {hint && <p className="text-xs text-muted">{hint}</p>}
+      <HintId.Provider value={hint ? hintId : undefined}>{children(id)}</HintId.Provider>
+      {hint && <p id={hintId} className="text-xs text-muted">{hint}</p>}
     </div>
   )
 }
 
 const control =
-  'h-9 w-full rounded-lg border border-border bg-surface px-3 text-sm text-text placeholder:text-muted/70 focus:border-accent focus:outline-none disabled:opacity-60'
+  'h-9 w-full rounded-lg border border-input-border bg-surface px-3 text-sm text-text placeholder:text-muted focus:border-accent focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/40 disabled:opacity-60'
 
 export function Input({ className, ...rest }: InputHTMLAttributes<HTMLInputElement>) {
-  return <input {...rest} className={cx(control, className)} />
+  const hint = useContext(HintId)
+  return <input {...rest} aria-describedby={describedBy(rest['aria-describedby'], hint)} className={cx(control, className)} />
 }
 
 /** A password field with an eye button: the text is only visible while the button is held down. */
@@ -143,8 +175,9 @@ export function PasswordInput({ className, ...rest }: Omit<InputHTMLAttributes<H
 }
 
 export function Select({ className, children, ...rest }: SelectHTMLAttributes<HTMLSelectElement>) {
+  const hint = useContext(HintId)
   return (
-    <select {...rest} className={cx(control, 'pr-8', className)}>
+    <select {...rest} aria-describedby={describedBy(rest['aria-describedby'], hint)} className={cx(control, 'pr-8', className)}>
       {children}
     </select>
   )
@@ -214,7 +247,7 @@ export function Badge({ tone = 'neutral', children }: { tone?: 'neutral' | 'acce
       className={cx(
         'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
         tone === 'neutral' && 'bg-surface-2 text-muted',
-        tone === 'accent' && 'bg-accent-soft text-accent',
+        tone === 'accent' && 'bg-accent-soft text-accent-hover',
         tone === 'warning' && 'bg-warning-soft text-warning',
         tone === 'negative' && 'bg-negative-soft text-negative'
       )}
@@ -256,13 +289,53 @@ export function Modal({
 }) {
   const { t } = useTranslation()
   const [asking, setAsking] = useState(false)
+  // Where focus was when the question came up, for "Keep editing".
+  const askedFrom = useRef<HTMLElement | null>(null)
   const request = (source: CloseSource): void => {
     const action = closeAction({ source, dirty, closeOnBackdrop, dismissible })
     if (action === 'close') onClose()
-    else if (action === 'confirm') setAsking(true)
+    else if (action === 'confirm') {
+      askedFrom.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      setAsking(true)
+    }
   }
   const requestRef = useRef(request)
   requestRef.current = request
+  const titleId = useId()
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const bodyRef = useRef<HTMLDivElement>(null)
+  // The opener is noted while rendering: a control with autoFocus has taken focus by the time effects run.
+  const opener = useRef<HTMLElement | null>(null)
+  const wasOpen = useRef(false)
+  if (open && !wasOpen.current) opener.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+  wasOpen.current = open
+  // Focus goes into the dialog (the first control, unless something already took it) and back to the opener on close.
+  useEffect(() => {
+    if (!open) return
+    const dialog = dialogRef.current
+    if (dialog && !dialog.contains(document.activeElement)) (focusablesIn(bodyRef.current)[0] ?? dialog).focus()
+    return () => {
+      if (opener.current?.isConnected) opener.current.focus()
+    }
+  }, [open])
+  // "Keep editing" puts focus back where it was, not on the page behind.
+  const wasAsking = useRef(false)
+  useEffect(() => {
+    if (!asking && wasAsking.current) (askedFrom.current?.isConnected ? askedFrom.current : focusablesIn(bodyRef.current)[0])?.focus()
+    wasAsking.current = asking
+  }, [asking])
+  const onTab = (e: ReactKeyboardEvent): void => {
+    if (e.key !== 'Tab') return
+    // A dialog opened from inside this one is a React child too: its keys are its own.
+    if (!dialogRef.current?.contains(e.target as Node)) return
+    const items = focusablesIn(dialogRef.current)
+    const target = tabWrap(items.indexOf(document.activeElement as HTMLElement), items.length, e.shiftKey)
+    if (items.length === 0) e.preventDefault()
+    else if (target) {
+      e.preventDefault()
+      items[target === 'first' ? 0 : items.length - 1]!.focus()
+    }
+  }
   useEffect(() => {
     if (!open) setAsking(false)
   }, [open])
@@ -282,20 +355,24 @@ export function Modal({
   return createPortal(
     <div className="no-drag fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-6" onMouseDown={() => request('backdrop')}>
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
-        className="w-full max-w-md rounded-xl border border-border bg-surface shadow-xl"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        onKeyDown={onTab}
+        className="w-full max-w-md outline-none rounded-xl border border-border bg-surface shadow-xl"
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between border-b border-border px-5 py-3.5">
-          <h2 className="font-semibold">{title}</h2>
+          <h2 id={titleId} className="font-semibold">{title}</h2>
           {dismissible && (
             <button type="button" aria-label={t('modal.close')} onClick={() => request('button')} className="rounded-md p-1 text-muted hover:bg-surface-2 hover:text-text">
               <X size={16} />
             </button>
           )}
         </div>
-        <div className="px-5 py-4">
+        <div ref={bodyRef} className="px-5 py-4">
           {/* Kept mounted while asking, so "Keep editing" returns to exactly what was typed. */}
           <div hidden={asking}>{children}</div>
           {asking && (

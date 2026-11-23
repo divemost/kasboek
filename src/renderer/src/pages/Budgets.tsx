@@ -77,6 +77,7 @@ export function Budgets({ initial }: { initial?: { month?: string; categoryId?: 
         </div>
       )}
       <Card>
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border text-left text-[12px] text-muted">
@@ -102,6 +103,7 @@ export function Budgets({ initial }: { initial?: { month?: string; categoryId?: 
             </tfoot>
           )}
         </table>
+        </div>
       </Card>
       <p className="mt-3 text-xs text-muted">{t('budgets.hint')}</p>
       <CategoriesModal open={modal === 'categories'} onClose={() => { setModal(null); load() }} />

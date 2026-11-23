@@ -59,7 +59,7 @@ function useHoldReveal(name?: string) {
         apply({ kind: 'keydown', key: e.key })
       }}
       onKeyUp={(e) => apply({ kind: 'keyup', key: e.key })}
-      className={cx('inline-flex h-5 w-5 shrink-0 touch-none items-center justify-center rounded align-middle text-muted select-none hover:bg-surface-2 hover:text-text focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none', className)}
+      className={cx('inline-flex h-6 w-6 shrink-0 touch-none items-center justify-center rounded align-middle text-muted select-none hover:bg-surface-2 hover:text-text focus-visible:ring-2 focus-visible:ring-accent focus-visible:outline-none', className)}
     >
       {shown ? <EyeOff size={12} aria-hidden /> : <Eye size={12} aria-hidden />}
     </button>

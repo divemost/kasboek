@@ -252,7 +252,7 @@ function Working({ activity }: { activity: AssistantStatus['activity'] }) {
   )
 }
 
-export function AssistantPanel({ go }: { go: (p: Page) => void }) {
+export function AssistantPanel({ go, overlay = false }: { go: (p: Page) => void; overlay?: boolean }) {
   const { t } = useTranslation()
   const toast = useToast()
   const status = useAssistant()
@@ -278,7 +278,7 @@ export function AssistantPanel({ go }: { go: (p: Page) => void }) {
   }
 
   return (
-    <aside className="flex w-[340px] shrink-0 flex-col border-l border-border bg-bg" aria-label={t('assistant.title')}>
+    <aside className={cx('flex flex-col border-l border-border bg-bg', overlay ? 'absolute inset-y-0 right-0 z-40 w-[min(340px,100%)] shadow-xl' : 'w-[340px] shrink-0')} aria-label={t('assistant.title')}>
       <div className="flex items-center justify-between px-5 pt-3 pb-3">
         <div className="flex items-center gap-2">
           <Sparkles size={15} className="text-accent" />
@@ -330,9 +330,10 @@ export function AssistantPanel({ go }: { go: (p: Page) => void }) {
                 </button>
               </div>
             )}
-            <div className="flex items-end gap-2 rounded-xl border border-border bg-surface px-3 py-2 focus-within:border-accent">
+            <div className="flex items-end gap-2 rounded-xl border border-input-border bg-surface px-3 py-2 focus-within:border-accent">
               <textarea
                 rows={1}
+                data-assistant-input
                 value={text}
                 onChange={(e) => setText(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendText(text) } }}

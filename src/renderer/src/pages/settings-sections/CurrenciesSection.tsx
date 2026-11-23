@@ -89,7 +89,7 @@ export function CurrenciesSection() {
         <form className="flex flex-col gap-4" onSubmit={(e) => { e.preventDefault(); void saveRate() }}>
           <Field label={t('fx.currency')}>{(id) => <CurrencySelect id={id} value={rate.currency} onChange={(e) => setRate({ ...rate, currency: e.target.value })} />}</Field>
           <Field label={t('fx.date')} hint={t('fx.dateHint')}>{(id) => <DateInput id={id} value={rate.date} onChange={(date) => setRate({ ...rate, date })} required />}</Field>
-          <Field label={t('fx.perEur', { currency: rate.currency })}>{(id) => <Input id={id} inputMode="decimal" value={rate.perEur} onChange={(e) => setRate({ ...rate, perEur: e.target.value })} placeholder="1.0800" className="num" required />}</Field>
+          <Field label={t('fx.perEur', { currency: rate.currency })}>{(id) => <Input id={id} inputMode="decimal" value={rate.perEur} onChange={(e) => setRate({ ...rate, perEur: e.target.value })} placeholder={formatNumber(1.08, fmt, 4)} className="num" required />}</Field>
           <div className="flex justify-end gap-2">
             <Button onClick={() => setAdding(false)}>{t('settings.cancel')}</Button>
             <Button type="submit" variant="primary" disabled={!(Number(rate.perEur.replace(',', '.')) > 0) || rate.currency === 'EUR' || !rate.date}>{t('settings.save')}</Button>
